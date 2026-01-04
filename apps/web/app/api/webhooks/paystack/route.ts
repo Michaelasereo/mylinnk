@@ -16,9 +16,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify webhook signature
+    // Verify webhook signature using Paystack secret key
     const hash = crypto
-      .createHmac('sha512', process.env.PAYSTACK_WEBHOOK_SECRET || '')
+      .createHmac('sha512', process.env.PAYSTACK_SECRET_KEY || '')
       .update(body)
       .digest('hex');
 
