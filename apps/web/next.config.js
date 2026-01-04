@@ -2,7 +2,7 @@ const path = require('path');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone', // For Netlify deployment
+  // output: 'standalone' removed - @netlify/plugin-nextjs handles build output
   turbopack: {
     root: path.resolve(__dirname, '../..'),
     resolveAlias: {
