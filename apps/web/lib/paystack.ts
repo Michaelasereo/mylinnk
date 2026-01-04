@@ -1,0 +1,186 @@
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
+
+if (!PAYSTACK_SECRET_KEY) {
+  throw new Error('Missing PAYSTACK_SECRET_KEY environment variable');
+}
+
+const PAYSTACK_BASE_URL = 'https://api.paystack.co';
+
+interface InitializePaymentParams {
+  email: string;
+  amount: number; // in kobo
+  metadata?: Record<string, unknown>;
+  channels?: string[];
+  subaccount?: string;
+  callback_url?: string;
+}
+
+interface TransferParams {
+  source: string;
+  amount: number; // in kobo
+  recipient: string;
+  reason: string;
+  reference?: string;
+}
+
+interface CreateSubaccountParams {
+  business_name: string;
+  settlement_bank: string;
+  account_number: string;
+  percentage_charge: number;
+  primary_contact_email: string;
+  primary_contact_name: string;
+  primary_contact_phone: string;
+}
+
+interface CreateTransferRecipientParams {
+  type: 'nuban';
+  name: string;
+  account_number: string;
+  bank_code: string;
+  currency?: string;
+}
+
+export const paystack = {
+  /**
+   * Initialize a payment transaction
+   */
+  async initializePayment(params: InitializePaymentParams) {
+    const response = await fetch(`${PAYSTACK_BASE_URL}/transaction/initialize`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: params.email,
+        amount: params.amount,
+        metadata: params.metadata,
+        channels: params.channels || ['card', 'bank', 'ussd'],
+        subaccount: params.subaccount,
+        callback_url: params.callback_url,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to initialize payment');
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Verify a payment transaction
+   */
+  async verifyPayment(reference: string) {
+    const response = await fetch(
+      `${PAYSTACK_BASE_URL}/transaction/verify/${reference}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to verify payment');
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Create a transfer recipient
+   */
+  async createTransferRecipient(params: CreateTransferRecipientParams) {
+    const response = await fetch(`${PAYSTACK_BASE_URL}/transferrecipient`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: params.type,
+        name: params.name,
+        account_number: params.account_number,
+        bank_code: params.bank_code,
+        currency: params.currency || 'NGN',
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to create transfer recipient');
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Initiate a transfer
+   */
+  async transfer(params: TransferParams) {
+    const response = await fetch(`${PAYSTACK_BASE_URL}/transfer`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        source: params.source,
+        amount: params.amount,
+        recipient: params.recipient,
+        reason: params.reason,
+        reference: params.reference,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to initiate transfer');
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Create a subaccount
+   */
+  async createSubaccount(params: CreateSubaccountParams) {
+    const response = await fetch(`${PAYSTACK_BASE_URL}/subaccount`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        business_name: params.business_name,
+        settlement_bank: params.settlement_bank,
+        account_number: params.account_number,
+        percentage_charge: params.percentage_charge,
+        primary_contact_email: params.primary_contact_email,
+        primary_contact_name: params.primary_contact_name,
+        primary_contact_phone: params.primary_contact_phone,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to create subaccount');
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Get public key
+   */
+  getPublicKey() {
+    return PAYSTACK_PUBLIC_KEY;
+  },
+};
+

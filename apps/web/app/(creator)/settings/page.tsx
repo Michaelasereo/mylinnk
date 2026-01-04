@@ -1,0 +1,64 @@
+import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@odim/database';
+import { SettingsForm } from '@/components/creator/SettingsForm';
+import { CreatorLinksManager } from '@/components/creator/CreatorLinksManager';
+import { PublicProfileCard } from '@/components/creator/PublicProfileCard';
+import { LogoutButton } from '@/components/creator/LogoutButton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
+export default async function SettingsPage() {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session) {
+    redirect('/login');
+  }
+
+  const creator = await prisma.creator.findUnique({
+    where: { userId: session.user.id },
+    include: {
+      user: true,
+    },
+  });
+
+  if (!creator) {
+    redirect('/onboard');
+  }
+
+  const publicUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/creator/${creator.username}`;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold">Settings</h1>
+        <p className="text-muted-foreground">
+          Manage your profile and account settings
+        </p>
+      </div>
+
+      <Tabs defaultValue="profile" className="w-full">
+        <TabsList>
+          <TabsTrigger value="profile">Profile</TabsTrigger>
+          <TabsTrigger value="account">Account</TabsTrigger>
+        </TabsList>
+        <TabsContent value="profile" className="mt-6 space-y-6">
+          {/* Public Profile Link */}
+          <PublicProfileCard publicUrl={publicUrl} username={creator.username} />
+
+          {/* Profile Settings */}
+          <SettingsForm creator={creator} />
+
+          {/* Links Management (Linktree-style) */}
+          <CreatorLinksManager />
+        </TabsContent>
+        <TabsContent value="account" className="mt-6">
+          {/* Logout */}
+          <LogoutButton />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}

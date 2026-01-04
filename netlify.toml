@@ -1,0 +1,46 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NEXT_PUBLIC_APP_URL = "https://odim.ng"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+[context.production.environment]
+  NODE_VERSION = "20"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[dev]
+  framework = "nextjs"
+  port = 3000
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Security headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Content-Security-Policy = """
+      default-src 'self' *.odim.ng *.paystack.co *.cloudflare.com;
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' *.paystack.co;
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' data: blob: *.cloudflare.com;
+      media-src 'self' *.cloudflare.com;
+      connect-src 'self' *.supabase.co *.paystack.co *.cloudflare.com;
+      font-src 'self';
+      frame-src *.paystack.co;
+    """
+

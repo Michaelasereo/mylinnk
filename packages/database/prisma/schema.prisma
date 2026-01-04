@@ -1,0 +1,568 @@
+// Prisma schema for Odim Platform
+// This schema extends Supabase auth.users
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Users table (extends Supabase auth.users)
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  fullName      String?  @map("full_name")
+  avatarUrl     String?  @map("avatar_url")
+  phoneNumber   String?  @map("phone_number")
+  countryCode   String   @default("NG") @map("country_code")
+  isCreator     Boolean  @default(false) @map("is_creator")
+  emailVerified Boolean  @default(false) @map("email_verified")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creatorProfile      Creator?
+  fanSubscriptions    FanSubscription[] @relation("FanSubscriptions")
+  transactions        Transaction[]
+
+  @@map("users")
+  @@index([email])
+}
+
+// Creators table
+model Creator {
+  id       String @id @default(uuid())
+  userId   String @unique @map("user_id")
+  username String @unique
+  displayName String @map("display_name")
+  bio      String?
+  category String  @default("makeup")
+  avatarUrl String? @map("avatar_url")
+  bannerUrl String? @map("banner_url")
+  instagramHandle String? @map("instagram_handle")
+  tiktokHandle    String? @map("tiktok_handle")
+
+  // Intro video for public profile
+  introVideoId String? @map("intro_video_id")
+
+  // Platform subscription
+  platformPlan              String?  @map("platform_plan") @default("starter")
+  platformSubscriptionActive Boolean @default(false) @map("platform_subscription_active")
+  platformSubscriptionEndsAt DateTime? @map("platform_subscription_ends_at")
+
+  // Payment settings
+  paystackSubaccountCode String? @map("paystack_subaccount_code")
+  paystackRecipientCode  String? @map("paystack_recipient_code")
+  bankCode               String? @map("bank_code")
+  accountNumber          String? @map("account_number")
+  accountName            String? @map("account_name")
+  bvnVerified            Boolean @default(false) @map("bvn_verified")
+
+  // Stats
+  totalEarnings   BigInt @default(0) @map("total_earnings") // in kobo
+  currentBalance  BigInt @default(0) @map("current_balance") // in kobo
+  subscriberCount Int    @default(0) @map("subscriber_count")
+  contentCount    Int    @default(0) @map("content_count")
+
+  // Settings
+  isPublic  Boolean @default(true) @map("is_public")
+  verified  Boolean @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  introVideo        Content?          @relation("IntroVideo", fields: [introVideoId], references: [id])
+  creatorPlans      CreatorPlan[]
+  fanSubscriptions  FanSubscription[] @relation("CreatorSubscriptions")
+  content           Content[]
+  collections       Collection[]
+  transactions      Transaction[]
+  payouts           Payout[]
+  platformSubscriptions PlatformSubscription[]
+  creatorLinks      CreatorLink[]
+  priceListItems    PriceListItem[]
+  availability      CreatorAvailability[]
+  bookings          Booking[]
+  emailSubscriptions EmailSubscription[]
+
+  @@map("creators")
+  @@index([userId])
+  @@index([username])
+}
+
+// Creator subscription plans
+model CreatorPlan {
+  id          String   @id @default(uuid())
+  creatorId   String   @map("creator_id")
+  name        String
+  description String?
+  price       Int      // in kobo
+  features    Json     @default("[]")
+  isActive    Boolean  @default(true) @map("is_active")
+  orderIndex  Int      @default(0) @map("order_index")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator        Creator            @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  fanSubscriptions FanSubscription[]
+
+  @@map("creator_plans")
+  @@index([creatorId])
+}
+
+// Fan subscriptions
+model FanSubscription {
+  id                    String   @id @default(uuid())
+  fanId                 String   @map("fan_id")
+  creatorId             String   @map("creator_id")
+  planId                String?  @map("plan_id")
+
+  // Subscription details
+  status                String   @default("active") // active, canceled, past_due
+  currentPeriodStart    DateTime? @map("current_period_start")
+  currentPeriodEnd      DateTime? @map("current_period_end")
+  cancelAtPeriodEnd     Boolean  @default(false) @map("cancel_at_period_end")
+
+  // Payment details
+  paystackSubscriptionId    String? @map("paystack_subscription_id")
+  paystackAuthorizationCode String? @map("paystack_authorization_code")
+  lastPaymentDate           DateTime? @map("last_payment_date")
+  nextPaymentDate           DateTime? @map("next_payment_date")
+
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  fan     User      @relation("FanSubscriptions", fields: [fanId], references: [id], onDelete: Cascade)
+  creator Creator   @relation("CreatorSubscriptions", fields: [creatorId], references: [id], onDelete: Cascade)
+  plan    CreatorPlan? @relation(fields: [planId], references: [id])
+
+  @@unique([fanId, creatorId], name: "unique_active_subscription", map: "unique_fan_creator_active")
+  @@map("fan_subscriptions")
+  @@index([fanId])
+  @@index([creatorId])
+}
+
+// Content
+model Content {
+  id            String   @id @default(uuid())
+  creatorId     String   @map("creator_id")
+  title         String
+  description   String?
+  type          String   // video, image, pdf, text
+  thumbnailUrl  String?  @map("thumbnail_url")
+
+  // Video specific
+  videoId       String?  @map("video_id") // Cloudflare Stream ID
+  durationSeconds Int?   @map("duration_seconds")
+  fileSizeBytes BigInt?  @map("file_size_bytes")
+
+  // Access control
+  accessType    String   @default("subscription") @map("access_type") // free, subscription, one_time
+  requiredPlanId String? @map("required_plan_id")
+
+  // Content category (content or tutorial)
+  contentCategory String @default("content") @map("content_category") // content, tutorial
+
+  // Tutorial-specific pricing (for individual purchase)
+  tutorialPrice Int?     @map("tutorial_price") // in kobo, for individual tutorial purchase
+  collectionId  String?  @map("collection_id") // Link tutorial to collection (optional)
+
+  // Stats
+  viewCount     Int      @default(0) @map("view_count")
+  likeCount     Int      @default(0) @map("like_count")
+
+  // Metadata
+  isPublished   Boolean  @default(false) @map("is_published")
+  publishedAt   DateTime? @map("published_at")
+  tags          String[] @default([])
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator          Creator         @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  collection       Collection?     @relation("TutorialContents", fields: [collectionId], references: [id])
+  sectionContents  SectionContent[]
+  introVideoFor    Creator[]       @relation("IntroVideo")
+  premiumAccessCodes PremiumAccessCode[]
+  tutorialPurchases TutorialPurchase[]
+
+  @@map("content")
+  @@index([creatorId])
+  @@index([isPublished])
+  @@index([contentCategory])
+  @@index([collectionId])
+}
+
+// Collections (Courses/Playlists)
+model Collection {
+  id            String   @id @default(uuid())
+  creatorId     String   @map("creator_id")
+  title         String
+  description   String?
+  thumbnailUrl  String?  @map("thumbnail_url")
+  
+  // Access control
+  accessType    String   @default("subscription") @map("access_type") // free, subscription, one_time
+  requiredPlanId String? @map("required_plan_id")
+  price         Int?     // in kobo (if one_time)
+  
+  // Subscription pricing (for collection subscriptions)
+  subscriptionPrice Int?  @map("subscription_price") // Monthly recurring price in kobo
+  subscriptionType  String? @default("one_time") @map("subscription_type") // one_time, recurring
+  
+  // Stats
+  viewCount     Int      @default(0) @map("view_count")
+  enrolledCount Int      @default(0) @map("enrolled_count")
+  
+  // Metadata
+  isPublished   Boolean  @default(false) @map("is_published")
+  publishedAt   DateTime? @map("published_at")
+  tags          String[] @default([])
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  creator        Creator   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  sections       Section[]
+  tutorialContents Content[] @relation("TutorialContents") // Tutorials in this collection
+  subscriptions  CollectionSubscription[]
+  premiumAccessCodes PremiumAccessCode[]
+  
+  @@map("collections")
+  @@index([creatorId])
+  @@index([isPublished])
+}
+
+// Sections within Collections (supports nested subsections)
+model Section {
+  id            String   @id @default(uuid())
+  collectionId  String   @map("collection_id")
+  parentSectionId String? @map("parent_section_id") // For subsections
+  title         String
+  description   String?
+  orderIndex    Int      @default(0) @map("order_index")
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  collection     Collection      @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  parentSection  Section?        @relation("SectionHierarchy", fields: [parentSectionId], references: [id], onDelete: Cascade)
+  subsections    Section[]       @relation("SectionHierarchy")
+  sectionContents SectionContent[]
+  
+  @@map("sections")
+  @@index([collectionId])
+  @@index([parentSectionId])
+}
+
+// Junction table: Links Content to Sections with ordering
+model SectionContent {
+  id        String   @id @default(uuid())
+  sectionId String   @map("section_id")
+  contentId String   @map("content_id")
+  orderIndex Int     @default(0) @map("order_index")
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  // Relations
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  
+  @@unique([sectionId, contentId])
+  @@map("section_contents")
+  @@index([sectionId])
+  @@index([contentId])
+}
+
+// Transactions
+model Transaction {
+  id            String   @id @default(uuid())
+  reference     String   @unique
+  userId        String?  @map("user_id")
+  creatorId     String?  @map("creator_id")
+
+  // Amounts
+  amount        Int      // in kobo
+  feeAmount     Int      @default(0) @map("fee_amount")
+  netAmount     Int      @default(0) @map("net_amount")
+  currency      String   @default("NGN")
+
+  // Status
+  status        String   @default("pending") // pending, success, failed, refunded
+  paymentMethod String?  @map("payment_method") // card, bank_transfer, ussd
+  gateway       String   @default("paystack")
+  gatewayResponse Json   @default("{}") @map("gateway_response")
+
+  // Type
+  type          String   // subscription, one_time, payout, platform_fee
+  metadata      Json     @default("{}")
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user    User?    @relation(fields: [userId], references: [id])
+  creator Creator? @relation(fields: [creatorId], references: [id])
+
+  @@map("transactions")
+  @@index([reference])
+  @@index([userId])
+  @@index([creatorId])
+}
+
+// Payouts
+model Payout {
+  id                  String   @id @default(uuid())
+  creatorId           String   @map("creator_id")
+  amount              Int      // in kobo
+  status              String   @default("pending") // pending, processing, success, failed
+  paystackTransferCode String? @map("paystack_transfer_code")
+  failureReason       String?  @map("failure_reason")
+  transactionIds      String[] @map("transaction_ids")
+  metadata            Json     @default("{}")
+  processedAt         DateTime? @map("processed_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator Creator @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@map("payouts")
+  @@index([creatorId])
+}
+
+// Platform subscriptions (creators paying Odim)
+model PlatformSubscription {
+  id                    String   @id @default(uuid())
+  creatorId             String   @unique @map("creator_id")
+  plan                  String   // starter, pro, premium
+  amount                Int      // in kobo
+  status                String   @default("active") // active, canceled, past_due
+  currentPeriodStart    DateTime? @map("current_period_start")
+  currentPeriodEnd      DateTime? @map("current_period_end")
+  paystackSubscriptionId String? @map("paystack_subscription_id")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator Creator @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@map("platform_subscriptions")
+  @@index([creatorId])
+}
+
+// Creator Links (Linktree-style links)
+model CreatorLink {
+  id        String   @id @default(uuid())
+  creatorId String   @map("creator_id")
+  label     String
+  url       String
+  linkType  String   @default("custom") @map("link_type") // instagram, tiktok, twitter, youtube, price_list, custom
+  icon      String?
+  orderIndex Int     @default(0) @map("order_index")
+  isActive  Boolean  @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator Creator @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@map("creator_links")
+  @@index([creatorId])
+  @@index([orderIndex])
+}
+
+// Price List Items for Booking Services
+model PriceListItem {
+  id               String   @id @default(uuid())
+  creatorId        String   @map("creator_id")
+  category         String?  // Optional category/group name (e.g., "HOME SERVICE", "PHOTOSHOOT MAKEUP")
+  name             String   // Item name (e.g., "MAINLAND 1", "ONE OUTFIT")
+  description      String?  // Optional description/notes
+  price            Int      // in kobo
+  durationMinutes  Int?     @map("duration_minutes") // Estimated service duration
+  orderIndex       Int      @default(0) @map("order_index") // Order within category
+  categoryOrderIndex Int    @default(0) @map("category_order_index") // Order of categories
+  isActive         Boolean  @default(true) @map("is_active")
+
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator  Creator   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  @@map("price_list_items")
+  @@index([creatorId])
+  @@index([category])
+  @@index([orderIndex])
+  @@index([isActive])
+}
+
+// Creator Availability (available dates for booking)
+model CreatorAvailability {
+  id          String   @id @default(uuid())
+  creatorId   String   @map("creator_id")
+  date        DateTime @db.Date // Available date (date only, no time)
+  isAvailable Boolean  @default(true) @map("is_available")
+  maxBookings Int?     @map("max_bookings") // Optional limit per date
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator Creator @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@unique([creatorId, date])
+  @@map("creator_availability")
+  @@index([creatorId])
+  @@index([date])
+}
+
+// Bookings for Creator Services
+model Booking {
+  id                String   @id @default(uuid())
+  creatorId         String   @map("creator_id")
+  priceListItemId   String   @map("price_list_item_id")
+
+  // Customer details (no user account needed)
+  customerEmail     String   @map("customer_email")
+  customerName      String   @map("customer_name")
+  customerPhone     String   @map("customer_phone") // Required for WhatsApp and calls
+  customerAddress   String   @map("customer_address") // Service delivery address
+
+  // Booking details
+  bookingDate       DateTime @db.Date @map("booking_date") // Service date
+  notes             String?  // Customer notes/requirements
+
+  // Payment amounts (in kobo)
+  totalAmount       Int      @map("total_amount") // Full payment from customer
+  firstPayoutAmount Int      @map("first_payout_amount") // 60% to creator
+  secondPayoutAmount Int     @map("second_payout_amount") // 40% to creator
+
+  // Status tracking
+  status            String   @default("pending") // pending, paid, first_payout_done, service_day, completed, disputed, refunded, cancelled
+  paymentReference  String?  @map("payment_reference") // Paystack reference
+  trackingToken     String   @unique @map("tracking_token") // Unique token for tracking page
+
+  // Payout tracking
+  firstPayoutTransactionId  String? @map("first_payout_transaction_id")
+  secondPayoutTransactionId String? @map("second_payout_transaction_id")
+
+  // Dispute handling
+  disputeReason     String?  @map("dispute_reason")
+  disputeStatus     String?  @map("dispute_status") // pending, approved, rejected
+  refundTransactionId String? @map("refund_transaction_id")
+
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator       Creator       @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  priceListItem PriceListItem @relation(fields: [priceListItemId], references: [id], onDelete: Cascade)
+
+  @@map("bookings")
+  @@index([creatorId])
+  @@index([customerEmail])
+  @@index([bookingDate])
+  @@index([status])
+}
+
+// Email Subscriptions (fans subscribing to creator updates)
+model EmailSubscription {
+  id               String   @id @default(uuid())
+  creatorId        String   @map("creator_id")
+  email            String
+  isActive         Boolean  @default(true) @map("is_active")
+  unsubscribeToken String   @unique @map("unsubscribe_token")
+
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator Creator @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@unique([creatorId, email])
+  @@map("email_subscriptions")
+  @@index([creatorId])
+  @@index([email])
+}
+
+// Premium Access Codes (for per-video/collection verification)
+model PremiumAccessCode {
+  id           String   @id @default(uuid())
+  contentId    String?  @map("content_id") // For individual content access
+  collectionId String?  @map("collection_id") // For collection access
+  email        String
+  code         String   // 6-digit code
+  expiresAt    DateTime @map("expires_at") // 15 minutes from creation
+  verified     Boolean  @default(false)
+  verifiedAt   DateTime? @map("verified_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  content    Content?    @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  collection Collection? @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@map("premium_access_codes")
+  @@index([contentId])
+  @@index([collectionId])
+  @@index([email])
+  @@index([expiresAt])
+}
+
+// Collection Subscriptions (email-based access to collections)
+model CollectionSubscription {
+  id               String    @id @default(uuid())
+  collectionId     String    @map("collection_id")
+  email            String
+  subscriptionType String    @map("subscription_type") // one_time, recurring
+  status           String    @default("active") // active, expired, cancelled
+  paymentReference String?   @map("payment_reference")
+  transactionId    String?   @map("transaction_id")
+  expiresAt        DateTime? @map("expires_at") // For recurring, null = lifetime
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, email])
+  @@map("collection_subscriptions")
+  @@index([collectionId])
+  @@index([email])
+  @@index([status])
+}
+
+// Tutorial Purchases (individual tutorial purchases by email)
+model TutorialPurchase {
+  id               String   @id @default(uuid())
+  contentId        String   @map("content_id")
+  email            String
+  paymentReference String?  @map("payment_reference")
+  transactionId    String?  @map("transaction_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@unique([contentId, email])
+  @@map("tutorial_purchases")
+  @@index([contentId])
+  @@index([email])
+}
+
