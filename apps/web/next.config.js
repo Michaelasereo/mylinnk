@@ -32,9 +32,15 @@ const nextConfig = {
   },
   experimental: {
     serverActions: {
-      bodySizeLimit: '10mb',
+      bodySizeLimit: '100mb',
     },
     optimizeCss: true,
+  },
+  // Increase API route body size limit for file uploads
+  api: {
+    bodyParser: {
+      sizeLimit: '100mb',
+    },
   },
   compress: true,
   generateEtags: true,
