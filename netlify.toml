@@ -1,6 +1,6 @@
 [build]
   base = "apps/web"
-  command = "cd ../.. && npm run db:generate && cd apps/web && npm run build"
+  command = "cd ../.. && cd packages/database && npm run db:generate && cd ../../apps/web && npm run build"
   publish = ".next"
 
 [build.environment]
