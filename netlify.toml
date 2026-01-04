@@ -1,5 +1,7 @@
 [build]
+  base = "apps/web"
   command = "npm run build"
+  publish = ".next"
 
 [build.environment]
   NEXT_PUBLIC_APP_URL = "https://odim.ng"
