@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { prisma } from '@odim/database';
 import { CreatorSidebar } from '@/components/creator/CreatorSidebar';
+import { OnboardingRequired } from '@/components/creator/OnboardingRequired';
 
 export default async function CreatorLayout({
   children,
@@ -28,8 +29,14 @@ export default async function CreatorLayout({
     },
   });
 
+  // If no creator account, show onboarding prompt instead of redirecting
   if (!creator) {
-    redirect('/onboard');
+    return (
+      <OnboardingRequired
+        userEmail={session.user.email || 'user'}
+        pageName="Creator Dashboard"
+      />
+    );
   }
 
   return (

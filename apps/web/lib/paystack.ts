@@ -1,3 +1,5 @@
+import { retryPaymentOperation } from './retry/retry-manager';
+
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
 
@@ -44,53 +46,57 @@ interface CreateTransferRecipientParams {
 
 export const paystack = {
   /**
-   * Initialize a payment transaction
+   * Initialize a payment transaction with retry logic
    */
   async initializePayment(params: InitializePaymentParams) {
-    const response = await fetch(`${PAYSTACK_BASE_URL}/transaction/initialize`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email: params.email,
-        amount: params.amount,
-        metadata: params.metadata,
-        channels: params.channels || ['card', 'bank', 'ussd'],
-        subaccount: params.subaccount,
-        callback_url: params.callback_url,
-      }),
-    });
+    return retryPaymentOperation(async () => {
+      const response = await fetch(`${PAYSTACK_BASE_URL}/transaction/initialize`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: params.email,
+          amount: params.amount,
+          metadata: params.metadata,
+          channels: params.channels || ['card', 'bank', 'ussd'],
+          subaccount: params.subaccount,
+          callback_url: params.callback_url,
+        }),
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to initialize payment');
-    }
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Payment initialization failed' }));
+        throw new Error(error.message || 'Failed to initialize payment');
+      }
 
-    return response.json();
+      return response.json();
+    }, 'payment-initialization');
   },
 
   /**
-   * Verify a payment transaction
+   * Verify a payment transaction with retry logic
    */
   async verifyPayment(reference: string) {
-    const response = await fetch(
-      `${PAYSTACK_BASE_URL}/transaction/verify/${reference}`,
-      {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-        },
+    return retryPaymentOperation(async () => {
+      const response = await fetch(
+        `${PAYSTACK_BASE_URL}/transaction/verify/${reference}`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Payment verification failed' }));
+        throw new Error(error.message || 'Failed to verify payment');
       }
-    );
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to verify payment');
-    }
-
-    return response.json();
+      return response.json();
+    }, 'payment-verification');
   },
 
   /**
@@ -121,30 +127,32 @@ export const paystack = {
   },
 
   /**
-   * Initiate a transfer
+   * Initiate a transfer with retry logic
    */
   async transfer(params: TransferParams) {
-    const response = await fetch(`${PAYSTACK_BASE_URL}/transfer`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        source: params.source,
-        amount: params.amount,
-        recipient: params.recipient,
-        reason: params.reason,
-        reference: params.reference,
-      }),
-    });
+    return retryPaymentOperation(async () => {
+      const response = await fetch(`${PAYSTACK_BASE_URL}/transfer`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          source: params.source,
+          amount: params.amount,
+          recipient: params.recipient,
+          reason: params.reason,
+          reference: params.reference,
+        }),
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to initiate transfer');
-    }
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Transfer failed' }));
+        throw new Error(error.message || 'Failed to initiate transfer');
+      }
 
-    return response.json();
+      return response.json();
+    }, 'payout-transfer');
   },
 
   /**

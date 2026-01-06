@@ -33,6 +33,26 @@ model User {
   @@index([email])
 }
 
+// Creator Tier System
+enum CreatorTier {
+  TIER_1  // Selar Model (Bulk Transfers)
+  TIER_2  // Hybrid (Choice)
+  TIER_3  // Subaccount Required
+}
+
+enum SubaccountStatus {
+  INACTIVE
+  PENDING_CREATION
+  ACTIVE
+  SUSPENDED
+}
+
+enum PayoutMethod {
+  SCHEDULED_BULK     // Free, weekly (Selar Model)
+  INSTANT            // 1% fee (Selar Model)
+  DIRECT_SUBACCOUNT  // Automatic via subaccount
+}
+
 // Creators table
 model Creator {
   id       String @id @default(uuid())
@@ -54,23 +74,50 @@ model Creator {
   platformSubscriptionActive Boolean @default(false) @map("platform_subscription_active")
   platformSubscriptionEndsAt DateTime? @map("platform_subscription_ends_at")
 
-  // Payment settings
+  // HYBRID PAYMENT SYSTEM
+  // Balance System (Selar Model)
+  balance              BigInt @default(0) @map("balance")         // Available balance in kobo
+  pendingBalance       BigInt @default(0) @map("pending_balance") // In holding period in kobo
+
+  // Bank Details (Both Models)
+  bankDetails          Json? @map("bank_details")                 // Basic bank info
+
+  // Subaccount System (For TIER_3)
   paystackSubaccountCode String? @map("paystack_subaccount_code")
+  subaccountStatus     SubaccountStatus @default(INACTIVE) @map("subaccount_status")
+
+  // Recipient System (For TIER_1/2 Instant Payouts)
   paystackRecipientCode  String? @map("paystack_recipient_code")
+
+  // Tier Management
+  tier                CreatorTier @default(TIER_1) @map("tier")
+  tierUpdatedAt       DateTime? @map("tier_updated_at")
+
+  // Earnings Tracking (For Tier Calculations)
+  totalEarnings       BigInt @default(0) @map("total_earnings") // in kobo
+  monthlyEarnings     Json @default("{}") @map("monthly_earnings") // Last 12 months
+  trustScore          Int @default(50) @map("trust_score") // 0-100
+  chargebackRate      Decimal @default(0) @map("chargeback_rate")
+
+  // Payout Settings
+  payoutMethod        PayoutMethod @default(SCHEDULED_BULK) @map("payout_method")
+  payoutThreshold     BigInt @default(250000) @map("payout_threshold") // ₦2,500 in kobo
+
+  // Legacy fields (to be migrated)
   bankCode               String? @map("bank_code")
   accountNumber          String? @map("account_number")
   accountName            String? @map("account_name")
   bvnVerified            Boolean @default(false) @map("bvn_verified")
+  currentBalance         BigInt @default(0) @map("current_balance") // Legacy
 
   // Stats
-  totalEarnings   BigInt @default(0) @map("total_earnings") // in kobo
-  currentBalance  BigInt @default(0) @map("current_balance") // in kobo
   subscriberCount Int    @default(0) @map("subscriber_count")
   contentCount    Int    @default(0) @map("content_count")
 
   // Settings
   isPublic  Boolean @default(true) @map("is_public")
   verified  Boolean @default(false)
+  bankVerified Boolean @default(false) @map("bank_verified")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -285,6 +332,12 @@ model SectionContent {
   @@index([contentId])
 }
 
+// Payment Method Tracking
+enum PaymentMethod {
+  DIRECT_SUBACCOUNT  // TIER_3: Money split by Paystack
+  PLATFORM_HELD      // TIER_1/2: Selar model, platform holds
+}
+
 // Transactions
 model Transaction {
   id            String   @id @default(uuid())
@@ -293,18 +346,26 @@ model Transaction {
   creatorId     String?  @map("creator_id")
 
   // Amounts
-  amount        Int      // in kobo
-  feeAmount     Int      @default(0) @map("fee_amount")
-  netAmount     Int      @default(0) @map("net_amount")
-  currency      String   @default("NGN")
+  amount            BigInt   // in kobo (total paid by customer)
+  creatorEarnings   BigInt?  @map("creator_earnings") // Amount going to creator
+  platformFee       BigInt?  @map("platform_fee")     // Platform fee
+  feeAmount         BigInt   @default(0) @map("fee_amount") // Gateway fees
+  netAmount         BigInt   @default(0) @map("net_amount") // Legacy field
+  currency          String   @default("NGN")
 
-  // Status
-  status        String   @default("pending") // pending, success, failed, refunded
-  paymentMethod String?  @map("payment_method") // card, bank_transfer, ussd
-  gateway       String   @default("paystack")
-  gatewayResponse Json   @default("{}") @map("gateway_response")
+  // Status & Payment Method
+  status            String   @default("pending") // pending, success, failed, refunded
+  paymentMethod     String?  @map("payment_method") // card, bank_transfer, ussd
+  paymentType       PaymentMethod? @map("payment_type") // DIRECT_SUBACCOUNT or PLATFORM_HELD
+  gateway           String   @default("paystack")
+  gatewayResponse   Json     @default("{}") @map("gateway_response")
 
-  // Type
+  // Funds Management
+  fundsReleased     Boolean  @default(false) @map("funds_released")
+  fundsReleasedAt   DateTime? @map("funds_released_at")
+  holdingDays       Int      @default(0) @map("holding_days")
+
+  // Type & Metadata
   type          String   // subscription, one_time, payout, platform_fee
   metadata      Json     @default("{}")
 

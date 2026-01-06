@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ODIM Image Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .debug-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .debug-section h3 { margin-top: 0; color: #333; }
+        .result { margin: 10px 0; padding: 10px; background: #f9f9f9; border-radius: 3px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .warning { background: #fff3cd; color: #856404; }
+        button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        input { padding: 8px; margin: 5px; border: 1px solid #ddd; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>🔍 ODIM Image Debug Tool</h1>
+    <p>This tool helps debug profile and banner image display issues.</p>
+
+    <div class="debug-section">
+        <h3>Step 1: Check Creator Profile Access</h3>
+        <p>Enter your creator username to test profile access:</p>
+        <input type="text" id="creatorUsername" placeholder="your-username" value="">
+        <button onclick="checkCreatorProfile()">Check Profile</button>
+        <div id="profileResult" class="result"></div>
+    </div>
+
+    <div class="debug-section">
+        <h3>Step 2: Test Image URLs</h3>
+        <p>Enter image URLs to test if they load:</p>
+        <input type="url" id="imageUrl" placeholder="https://..." style="width: 300px;">
+        <button onclick="testImageUrl()">Test Image</button>
+        <div id="imageResult" class="result"></div>
+        <img id="testImage" style="max-width: 200px; max-height: 200px; display: none; border: 1px solid #ddd; margin-top: 10px;">
+    </div>
+
+    <div class="debug-section">
+        <h3>Step 3: Check Settings Page</h3>
+        <button onclick="checkSettingsPage()">Check Settings Access</button>
+        <div id="settingsResult" class="result"></div>
+    </div>
+
+    <div class="debug-section">
+        <h3>Step 4: Image Debug Script</h3>
+        <p>Copy and paste this script in your browser console on the creator profile/settings page:</p>
+        <button onclick="copyDebugScript()">Copy Debug Script</button>
+        <div id="debugScript" style="display: none; margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 5px; font-family: monospace; font-size: 12px; white-space: pre-wrap;">
+// Debug script to check image URLs and display issues
+
+console.log('🔍 ODIM Image Debug Script v2.0');
+console.log('===============================');
+
+const isCreatorPage = window.location.pathname.startsWith('/creator/');
+const isSettingsPage = window.location.pathname.includes('/settings');
+
+function checkImage(img, label) {
+  if (!img) {
+    console.log(`❌ ${label} image not found`);
+    return;
+  }
+
+  console.log(`🖼️ ${label} image found:`);
+  console.log('  - src:', img.src);
+  console.log('  - Natural size:', img.naturalWidth, 'x', img.naturalHeight);
+  console.log('  - Display size:', img.clientWidth, 'x', img.clientHeight);
+
+  if (img.naturalWidth < 200 || img.naturalHeight < 200) {
+    console.log('  ⚠️ WARNING: Image appears to be thumbnail size!');
+  }
+}
+
+if (isCreatorPage) {
+  const avatarImg = document.querySelector('img[alt*="avatar"], img[class*="rounded-full"]');
+  const bannerImg = document.querySelector('img[alt*="banner"]');
+
+  checkImage(avatarImg, 'Avatar');
+  checkImage(bannerImg, 'Banner');
+}
+
+console.log('🎯 Debug complete - check results above');
+        </div>
+    </div>
+
+    <div class="debug-section">
+        <h3>Step 5: Run Full Debug</h3>
+        <button onclick="runFullDebug()">Run Complete Debug</button>
+        <div id="fullDebugResult" class="result"></div>
+    </div>
+
+    <script>
+        const baseUrl = 'http://localhost:3001';
+
+        async function checkCreatorProfile() {
+            const username = document.getElementById('creatorUsername').value;
+            if (!username) {
+                showResult('profileResult', 'Please enter a username', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${baseUrl}/creator/${username}`, {
+                    method: 'HEAD' // Just check if it exists
+                });
+
+                if (response.ok) {
+                    showResult('profileResult',
+                        `✅ Creator profile exists: ${baseUrl}/creator/${username}<br>` +
+                        `Status: ${response.status}<br>` +
+                        `<a href="${baseUrl}/creator/${username}" target="_blank">Open Profile</a>`,
+                        'success');
+                } else {
+                    showResult('profileResult',
+                        `❌ Creator profile not found: ${username}<br>` +
+                        `Status: ${response.status}`,
+                        'error');
+                }
+            } catch (error) {
+                showResult('profileResult',
+                    `❌ Network error: ${error.message}`,
+                    'error');
+            }
+        }
+
+        async function testImageUrl() {
+            const url = document.getElementById('imageUrl').value;
+            if (!url) {
+                showResult('imageResult', 'Please enter an image URL', 'error');
+                return;
+            }
+
+            const img = document.getElementById('testImage');
+            img.style.display = 'none';
+
+            try {
+                // Test if URL is accessible
+                const response = await fetch(url, { method: 'HEAD' });
+                const img = document.getElementById('testImage');
+
+                if (response.ok) {
+                    img.src = url;
+                    img.style.display = 'block';
+                    img.onload = () => {
+                        showResult('imageResult',
+                            `✅ Image loads successfully<br>` +
+                            `Dimensions: ${img.naturalWidth} x ${img.naturalHeight}px<br>` +
+                            `URL: ${url}`,
+                            'success');
+                    };
+                    img.onerror = () => {
+                        showResult('imageResult',
+                            `❌ Image URL accessible but failed to render<br>` +
+                            `Status: ${response.status}<br>` +
+                            `URL: ${url}`,
+                            'error');
+                    };
+                } else {
+                    showResult('imageResult',
+                        `❌ Image URL not accessible<br>` +
+                        `Status: ${response.status}<br>` +
+                        `URL: ${url}`,
+                        'error');
+                }
+            } catch (error) {
+                showResult('imageResult',
+                    `❌ Network error loading image: ${error.message}<br>` +
+                    `URL: ${url}`,
+                    'error');
+            }
+        }
+
+        async function checkSettingsPage() {
+            try {
+                const response = await fetch(`${baseUrl}/creator/settings`, {
+                    method: 'HEAD',
+                    credentials: 'include' // Include cookies for auth
+                });
+
+                if (response.ok) {
+                    showResult('settingsResult',
+                        `✅ Settings page accessible<br>` +
+                        `<a href="${baseUrl}/creator/settings" target="_blank">Open Settings</a>`,
+                        'success');
+                } else if (response.status === 401 || response.status === 302) {
+                    showResult('settingsResult',
+                        `⚠️ Settings page requires login<br>` +
+                        `Please log in first, then access: ${baseUrl}/creator/settings`,
+                        'warning');
+                } else {
+                    showResult('settingsResult',
+                        `❌ Settings page error: ${response.status}`,
+                        'error');
+                }
+            } catch (error) {
+                showResult('settingsResult',
+                    `❌ Network error: ${error.message}`,
+                    'error');
+            }
+        }
+
+        async function runFullDebug() {
+            showResult('fullDebugResult', '🔄 Running full debug...', 'warning');
+
+            // Check if server is running
+            try {
+                const response = await fetch(baseUrl);
+                if (!response.ok) {
+                    showResult('fullDebugResult',
+                        `❌ Server not responding properly: ${response.status}`,
+                        'error');
+                    return;
+                }
+            } catch (error) {
+                showResult('fullDebugResult',
+                    `❌ Cannot connect to server: ${error.message}<br>` +
+                    `Make sure the dev server is running: \`npm run dev\``,
+                    'error');
+                return;
+            }
+
+            // Check user authentication status
+            let authStatus = 'unknown';
+            let hasCreatorAccount = false;
+
+            try {
+                // Check if user can access protected creator routes
+                const dashboardResponse = await fetch(`${baseUrl}/creator/dashboard`, {
+                    method: 'HEAD',
+                    credentials: 'include'
+                });
+
+                if (dashboardResponse.ok) {
+                    authStatus = 'authenticated';
+                    hasCreatorAccount = true;
+                } else if (dashboardResponse.status === 302 || dashboardResponse.status === 401) {
+                    authStatus = 'not_authenticated';
+                } else if (dashboardResponse.status === 404) {
+                    // Could be authenticated user but no creator account
+                    const loginResponse = await fetch(`${baseUrl}/login`, { method: 'HEAD' });
+                    if (loginResponse.ok) {
+                        authStatus = 'authenticated_no_creator';
+                    } else {
+                        authStatus = 'unknown';
+                    }
+                }
+            } catch (error) {
+                authStatus = 'connection_error';
+            }
+
+            // Check for common issues
+            let issues = [];
+            let recommendations = [];
+
+            // Generate report based on authentication status
+            let report = '<h4>🔍 Authentication & Account Status</h4>';
+
+            if (authStatus === 'authenticated_no_creator') {
+                report += '<div class="warning">⚠️ <strong>You are logged in but don\'t have a creator account yet!</strong></div>';
+                report += '<div class="success">✅ User authentication: Working<br>';
+                report += '❌ Creator account: Not found</div>';
+                report += '<div class="info">💡 <strong>Onboarding prompts now appear directly on creator pages!</strong><br>';
+                report += 'Visit any creator page (/creator/dashboard, /creator/settings, etc.) to see the setup prompt.</div>';
+
+                recommendations.push('Visit any creator page to see the onboarding prompt');
+                recommendations.push('Complete the 4-step setup process');
+                recommendations.push('Once creator account is created, you can upload profile images');
+            } else if (authStatus === 'authenticated') {
+                report += '<div class="success">✅ User authentication: Working<br>';
+                report += '✅ Creator account: Found</div>';
+
+                // Check if there are any creator accounts visible
+                const testUsernames = ['test', 'demo', 'admin', 'creator'];
+                let foundCreator = false;
+
+                for (const username of testUsernames) {
+                    try {
+                        const response = await fetch(`${baseUrl}/creator/${username}`, { method: 'HEAD' });
+                        if (response.ok) {
+                            foundCreator = true;
+                            report += `<div class="success">📍 Creator profile found: <a href="${baseUrl}/creator/${username}" target="_blank">${username}</a></div>`;
+                            break;
+                        }
+                    } catch (error) {
+                        // Continue checking
+                    }
+                }
+
+                if (!foundCreator) {
+                    report += '<div class="warning">⚠️ Creator account exists but profile not accessible</div>';
+                    recommendations.push('Check your creator username in settings');
+                }
+            } else if (authStatus === 'not_authenticated') {
+                report += '<div class="warning">⚠️ <strong>You are not logged in</strong></div>';
+                report += `<div class="success"><a href="${baseUrl}/login" target="_blank">Go to Login Page</a></div>`;
+                recommendations.push('Log in to your account first');
+            } else {
+                report += '<div class="error">❌ Could not determine authentication status</div>';
+            }
+
+            // Check Redis/Queue system
+            try {
+                const response = await fetch(`${baseUrl}/api/webhooks/paystack`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ test: true })
+                });
+                if (response.status === 500) {
+                    issues.push('Redis/Queue system not available (affects some features)');
+                    recommendations.push('Install Redis for full webhook processing');
+                }
+            } catch (error) {
+                // Expected for unauthorized requests
+            }
+
+            // Add issues and recommendations
+            if (issues.length > 0) {
+                report += '<div class="error"><strong>Technical Issues:</strong><ul>';
+                issues.forEach(issue => {
+                    report += `<li>${issue}</li>`;
+                });
+                report += '</ul></div>';
+            }
+
+            if (recommendations.length > 0) {
+                report += '<div class="warning"><strong>Recommended Actions:</strong><ul>';
+                recommendations.forEach(rec => {
+                    report += `<li>${rec}</li>`;
+                });
+                report += '</ul></div>';
+            }
+
+            // Next steps based on status
+            report += '<br><strong>🎯 Next Steps:</strong><br>';
+
+            if (authStatus === 'authenticated_no_creator') {
+                report += `1. <a href="${baseUrl}/creator/dashboard" target="_blank">Visit Creator Dashboard</a> to see onboarding prompt<br>`;
+                report += '2. Complete the 4-step setup process<br>';
+                report += '3. Upload profile and banner images in settings<br>';
+                report += '4. View your creator profile to see the images<br>';
+            } else if (authStatus === 'authenticated') {
+                report += `1. <a href="${baseUrl}/creator/settings" target="_blank">Go to Settings to upload images</a><br>`;
+                report += '2. Check your creator profile page<br>';
+                report += '3. Use browser DevTools to inspect image elements<br>';
+            } else {
+                report += `1. <a href="${baseUrl}/login" target="_blank">Log in to your account</a><br>`;
+                report += '2. Complete creator onboarding if needed<br>';
+                report += '3. Upload profile images<br>';
+            }
+
+            showResult('fullDebugResult', report, issues.length === 0 && authStatus !== 'not_authenticated' ? 'success' : 'warning');
+        }
+
+        function showResult(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.innerHTML = message;
+            element.className = `result ${type}`;
+        }
+
+        function copyDebugScript() {
+            const scriptElement = document.getElementById('debugScript');
+            const textArea = document.createElement('textarea');
+            textArea.value = scriptElement.textContent || scriptElement.innerText;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+
+            alert('Debug script copied to clipboard! Paste it in your browser console.');
+        }
+
+        // Auto-run basic checks on page load
+        window.addEventListener('load', () => {
+            runFullDebug();
+        });
+    </script>
+</body>
+</html>

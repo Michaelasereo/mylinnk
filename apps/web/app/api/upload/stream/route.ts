@@ -1,21 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { withCreatorSessionValidation } from '@/lib/auth/session-middleware';
+import { withRateLimit, rateLimiters } from '@/lib/rate-limit/rate-limiter';
 
 const STREAM_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
 const STREAM_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 const STREAM_BASE_URL = `https://api.cloudflare.com/client/v4/accounts/${STREAM_ACCOUNT_ID}/stream`;
 
 export async function POST(request: NextRequest) {
-  try {
-    // Check authentication
-    const supabase = await createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+  return withCreatorSessionValidation(request, async (session, user) => {
+    try {
+      // Apply rate limiting for uploads (expensive operations)
+      const rateLimitResult = await withRateLimit(request, rateLimiters.upload);
 
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+      if (!rateLimitResult.allowed) {
+        return NextResponse.json(
+          {
+            error: 'Upload rate limit exceeded. Please try again later.',
+            retryAfter: Math.ceil((rateLimitResult.result.resetTime - Date.now()) / 1000),
+          },
+          {
+            status: 429,
+            headers: {
+              ...rateLimitResult.headers,
+              'Retry-After': Math.ceil((rateLimitResult.result.resetTime - Date.now()) / 1000).toString(),
+            },
+          }
+        );
+      }
 
     const formData = await request.formData();
     const file = formData.get('file') as File;
@@ -44,18 +55,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const data = await response.json();
-    return NextResponse.json({
-      videoId: data.result.uid,
-      thumbnail: data.result.thumbnail,
-      playback: data.result.playback,
-    });
-  } catch (error) {
-    console.error('Error uploading to Stream:', error);
-    return NextResponse.json(
-      { error: 'Failed to upload video' },
-      { status: 500 }
-    );
-  }
+      const data = await response.json();
+      return NextResponse.json(
+        {
+          videoId: data.result.uid,
+          thumbnail: data.result.thumbnail,
+          playback: data.result.playback,
+        },
+        { headers: rateLimitResult.headers }
+      );
+    } catch (error) {
+      console.error('Error uploading to Stream:', error);
+      return NextResponse.json(
+        { error: 'Failed to upload video' },
+        { status: 500 }
+      );
+    }
+  });
 }
 

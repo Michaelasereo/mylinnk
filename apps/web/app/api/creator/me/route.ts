@@ -41,7 +41,23 @@ export async function GET() {
       return NextResponse.json({ error: 'Creator not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ creator, collections: creator.collections });
+    // Convert BigInt fields to strings to avoid serialization issues
+    const serializedCreator = {
+      ...creator,
+      totalEarnings: creator.totalEarnings.toString(),
+      currentBalance: creator.currentBalance.toString(),
+    };
+
+    const serializedCollections = creator.collections.map(collection => ({
+      ...collection,
+      price: collection.price?.toString(),
+      subscriptionPrice: collection.subscriptionPrice?.toString(),
+    }));
+
+    return NextResponse.json({
+      creator: serializedCreator,
+      collections: serializedCollections
+    });
   } catch (error) {
     console.error('Error getting creator:', error);
     return NextResponse.json(

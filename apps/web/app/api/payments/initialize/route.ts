@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { paystack } from '@/lib/paystack';
 import { prisma } from '@odim/database';
+import { withRateLimit, rateLimiters } from '@/lib/rate-limit/rate-limiter';
 import { z } from 'zod';
 
 const paymentSchema = z.object({
@@ -15,6 +16,25 @@ const paymentSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    // Apply rate limiting (strict limits for payments)
+    const rateLimitResult = await withRateLimit(request, rateLimiters.strict);
+
+    if (!rateLimitResult.allowed) {
+      return NextResponse.json(
+        {
+          error: 'Too many payment requests. Please try again later.',
+          retryAfter: Math.ceil((rateLimitResult.result.resetTime - Date.now()) / 1000),
+        },
+        {
+          status: 429,
+          headers: {
+            ...rateLimitResult.headers,
+            'Retry-After': Math.ceil((rateLimitResult.result.resetTime - Date.now()) / 1000).toString(),
+          },
+        }
+      );
+    }
+
     const body = await request.json();
     const validatedData = paymentSchema.parse(body);
 
@@ -58,27 +78,34 @@ export async function POST(request: NextRequest) {
       throw new Error(paymentData.message || 'Payment initialization failed');
     }
 
-    // Save transaction reference
-    await prisma.transaction.create({
-      data: {
-        reference: paymentData.data.reference,
-        userId: userId,
-        creatorId: validatedData.creatorId,
-        amount: validatedData.amount * 100,
-        status: 'pending',
-        type: validatedData.type,
-        metadata: {
-          phone: validatedData.phone,
-          subscriber_email: validatedData.email,
-          plan_id: validatedData.planId,
+    // Save transaction reference (with transaction for atomicity)
+    await prisma.$transaction(async (tx) => {
+      await tx.transaction.create({
+        data: {
+          reference: paymentData.data.reference,
+          userId: userId,
+          creatorId: validatedData.creatorId,
+          amount: validatedData.amount * 100,
+          status: 'pending',
+          type: validatedData.type,
+          metadata: {
+            phone: validatedData.phone,
+            subscriber_email: validatedData.email,
+            plan_id: validatedData.planId,
+          },
         },
-      },
+      });
     });
 
-    return NextResponse.json({
-      authorization_url: paymentData.data.authorization_url,
-      reference: paymentData.data.reference,
-    });
+    return NextResponse.json(
+      {
+        authorization_url: paymentData.data.authorization_url,
+        reference: paymentData.data.reference,
+      },
+      {
+        headers: rateLimitResult.headers,
+      }
+    );
   } catch (error) {
     console.error('Payment initialization error:', error);
     

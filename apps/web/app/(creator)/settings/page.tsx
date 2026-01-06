@@ -5,6 +5,7 @@ import { SettingsForm } from '@/components/creator/SettingsForm';
 import { CreatorLinksManager } from '@/components/creator/CreatorLinksManager';
 import { PublicProfileCard } from '@/components/creator/PublicProfileCard';
 import { LogoutButton } from '@/components/creator/LogoutButton';
+import { OnboardingPrompt } from '@/components/ui/onboarding-prompt';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default async function SettingsPage() {
@@ -24,8 +25,17 @@ export default async function SettingsPage() {
     },
   });
 
+  // If no creator account, show onboarding prompt instead of redirecting
   if (!creator) {
-    redirect('/onboard');
+    return (
+      <div className="min-h-screen bg-gray-50 py-8">
+        <OnboardingPrompt
+          userEmail={session.user.email || 'user'}
+          completedSteps={0}
+          totalSteps={4}
+        />
+      </div>
+    );
   }
 
   const publicUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/creator/${creator.username}`;

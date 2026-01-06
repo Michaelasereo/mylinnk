@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { withCreatorSessionValidation } from '@/lib/auth/session-middleware';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const R2_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -18,16 +18,8 @@ const s3Client = new S3Client({
 });
 
 export async function POST(request: NextRequest) {
-  try {
-    // Check authentication
-    const supabase = await createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  return withCreatorSessionValidation(request, async (session, user) => {
+    try {
 
     const formData = await request.formData();
     const file = formData.get('file') as File;
@@ -62,26 +54,20 @@ export async function POST(request: NextRequest) {
       ? `${R2_PUBLIC_URL}/${uniqueFileName}`
       : `https://pub-${R2_ACCOUNT_ID}.r2.dev/${R2_BUCKET_NAME}/${uniqueFileName}`;
 
-    return NextResponse.json({ url: publicUrl, fileName: uniqueFileName });
-  } catch (error) {
-    console.error('Error uploading to R2:', error);
-    return NextResponse.json(
-      { error: 'Failed to upload file' },
-      { status: 500 }
-    );
-  }
+      return NextResponse.json({ url: publicUrl, fileName: uniqueFileName });
+    } catch (error) {
+      console.error('Error uploading to R2:', error);
+      return NextResponse.json(
+        { error: 'Failed to upload file' },
+        { status: 500 }
+      );
+    }
+  });
 }
 
 export async function DELETE(request: NextRequest) {
-  try {
-    const supabase = await createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  return withCreatorSessionValidation(request, async (session, user) => {
+    try {
 
     const { searchParams } = new URL(request.url);
     const fileName = searchParams.get('fileName');
@@ -103,13 +89,14 @@ export async function DELETE(request: NextRequest) {
 
     await s3Client.send(command);
 
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Error deleting from R2:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete file' },
-      { status: 500 }
-    );
-  }
+      return NextResponse.json({ success: true });
+    } catch (error) {
+      console.error('Error deleting from R2:', error);
+      return NextResponse.json(
+        { error: 'Failed to delete file' },
+        { status: 500 }
+      );
+    }
+  });
 }
 

@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { createCreatorProfile } from '@/lib/actions/creator';
+import { useFormPersistence, formPersistence } from '@/lib/forms/form-persistence';
+import { useErrorHandler } from '@/lib/errors/error-handler';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -88,14 +90,44 @@ const NIGERIAN_BANKS = [
 export default function OnboardingPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { handleError } = useErrorHandler();
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [restoredFromStorage, setRestoredFromStorage] = useState(false);
+  const { saveFormData, loadFormData, clearFormData, hasPersistedData } = useFormPersistence('creator-onboarding');
+
   const [formData, setFormData] = useState({
     step1: {} as z.infer<typeof step1Schema>,
     step2: {} as z.infer<typeof step2Schema>,
     step3: {} as z.infer<typeof step3Schema>,
     step4: {} as z.infer<typeof step4Schema>,
   });
+
+  // Load persisted data on component mount
+  useEffect(() => {
+    const persistedData = loadFormData();
+    if (persistedData) {
+      setFormData(persistedData.formData || formData);
+      setStep(persistedData.step || 1);
+      setRestoredFromStorage(true);
+
+      toast({
+        title: 'Progress Restored',
+        description: 'Your previous onboarding progress has been restored.',
+      });
+    }
+  }, []);
+
+  // Save form state whenever it changes
+  useEffect(() => {
+    if (restoredFromStorage || Object.values(formData).some(step => Object.keys(step).length > 0)) {
+      saveFormData({
+        formData,
+        step,
+        timestamp: Date.now(),
+      });
+    }
+  }, [formData, step, restoredFromStorage]);
 
   const step1Form = useForm<z.infer<typeof step1Schema>>({
     resolver: zodResolver(step1Schema),
@@ -160,13 +192,17 @@ export default function OnboardingPage() {
       );
 
       if (!result.success) {
+        const error = handleError(result.error, { operation: 'onboarding' });
         toast({
-          title: 'Error',
-          description: result.error || 'Failed to create profile',
+          title: error.title,
+          description: error.message,
           variant: 'destructive',
         });
         return;
       }
+
+      // Clear persisted form data on successful completion
+      clearFormData();
 
       toast({
         title: 'Success',
@@ -175,9 +211,10 @@ export default function OnboardingPage() {
 
       router.push('/creator/dashboard');
     } catch (error) {
+      const errorInfo = handleError(error, { operation: 'onboarding' });
       toast({
-        title: 'Error',
-        description: 'An unexpected error occurred',
+        title: errorInfo.title,
+        description: errorInfo.message,
         variant: 'destructive',
       });
     } finally {
@@ -193,6 +230,14 @@ export default function OnboardingPage() {
           Let's set up your creator profile in a few simple steps
         </p>
         <Progress value={(step / 4) * 100} className="mt-4" />
+
+        {restoredFromStorage && (
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+            <p className="text-sm text-blue-800">
+              📁 Previous progress restored from your browser
+            </p>
+          </div>
+        )}
       </div>
 
       <Card>

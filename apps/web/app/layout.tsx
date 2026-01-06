@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/toaster';
+import { ServiceWorkerRegistration } from '@/components/service-worker-registration';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -37,6 +38,7 @@ export default async function RootLayout({
           >
             {children}
             <Toaster />
+            <ServiceWorkerRegistration />
           </ThemeProvider>
         </body>
       </html>

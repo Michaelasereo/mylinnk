@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { prisma } from '@odim/database';
 import { CreatorDashboard } from '@/components/creator/Dashboard';
+import { OnboardingPrompt } from '@/components/ui/onboarding-prompt';
 import {
   getCreatorAnalytics,
   getRecentSubscriptions,
@@ -23,11 +24,20 @@ export default async function CreatorDashboardPage() {
     where: { userId: session.user.id },
   });
 
+  // If no creator account, show onboarding prompt instead of redirecting
   if (!creator) {
-    redirect('/onboard');
+    return (
+      <div className="min-h-screen bg-gray-50 py-8">
+        <OnboardingPrompt
+          userEmail={session.user.email || 'user'}
+          completedSteps={0}
+          totalSteps={4}
+        />
+      </div>
+    );
   }
 
-  // Fetch data in parallel
+  // Fetch data in parallel for existing creators
   const [analytics, recentSubscriptions, contentMetrics] = await Promise.all([
     getCreatorAnalytics(creator.id),
     getRecentSubscriptions(creator.id),
