@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { cookies } from 'next/headers';
 import { CreatorDashboard } from '@/components/creator/Dashboard';
 import { OnboardingPrompt } from '@/components/ui/onboarding-prompt';
+import { OnboardingFlow } from '@/components/creator/OnboardingFlow';
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -77,6 +78,30 @@ export default async function DashboardPage() {
           totalSteps={4}
         />
       </div>
+    );
+  }
+
+  // Check if creator has completed onboarding
+  const hasCompletedOnboarding =
+    creator.username &&
+    creator.displayName &&
+    creator.category &&
+    creator.creatorPlans?.length > 0; // Has at least one pricing plan
+
+  // If onboarding not completed, show onboarding flow
+  if (!hasCompletedOnboarding) {
+    return (
+      <OnboardingFlow
+        onComplete={() => window.location.reload()}
+        initialData={{
+          username: creator.username,
+          displayName: creator.displayName,
+          bio: creator.bio,
+          category: creator.category,
+          instagramHandle: creator.instagramHandle,
+          tiktokHandle: creator.tiktokHandle
+        }}
+      />
     );
   }
 

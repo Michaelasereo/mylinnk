@@ -49,9 +49,28 @@ export function ContentList({ content, creator }: ContentListProps) {
                   {item.isPublished ? 'Published' : 'Draft'}
                 </Badge>
               </div>
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <div className="flex items-center justify-between text-sm text-muted-foreground mb-4">
                 <span>{item.viewCount} views</span>
                 <span>{formatDate(item.createdAt)}</span>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => window.open(`/${creator.username}/content/${item.id}`, '_blank')}
+                >
+                  View
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => router.push(`/dashboard/content/${item.id}/edit`)}
+                >
+                  Edit
+                </Button>
               </div>
             </CardContent>
           </Card>
