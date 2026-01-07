@@ -82,13 +82,14 @@ export function SettingsForm({ creator, publicUrl }: SettingsFormProps) {
       formData.append('file', file);
       formData.append('fileName', file.name);
 
-      const response = await fetch('/api/upload/r2', {
+      const response = await fetch('/api/upload/profile', {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
-        throw new Error('Upload failed');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Upload failed');
       }
 
       const data = await response.json();
@@ -97,7 +98,7 @@ export function SettingsForm({ creator, publicUrl }: SettingsFormProps) {
       console.error('Upload error:', error);
       toast({
         title: 'Upload failed',
-        description: 'Failed to upload image. Please try again.',
+        description: error.message || 'Failed to upload image. Please try again.',
         variant: 'destructive',
       });
       return null;
