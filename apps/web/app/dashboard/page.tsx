@@ -85,8 +85,7 @@ export default async function DashboardPage() {
   const hasCompletedOnboarding =
     creator.username &&
     creator.displayName &&
-    creator.category &&
-    creator.creatorPlans?.length > 0; // Has at least one pricing plan
+    creator.category; // Basic profile info is sufficient
 
   // If onboarding not completed, show onboarding flow
   if (!hasCompletedOnboarding) {

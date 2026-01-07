@@ -41,16 +41,9 @@ const steps = [
   {
     id: 'pricing',
     title: 'Pricing Setup',
-    description: 'Set your subscription pricing',
+    description: 'Set your subscription pricing (optional)',
     icon: DollarSign,
     fields: ['subscriptionPrice']
-  },
-  {
-    id: 'media',
-    title: 'Profile Media',
-    description: 'Upload your profile and banner images',
-    icon: Upload,
-    fields: ['avatarUrl', 'bannerUrl']
   }
 ];
 
@@ -69,6 +62,7 @@ export function OnboardingFlow({ onComplete, initialData = {} }: OnboardingFlowP
     bannerUrl: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState('');
 
   const currentStepData = steps[currentStep];
   const progress = ((currentStep + 1) / steps.length) * 100;
@@ -103,12 +97,20 @@ export function OnboardingFlow({ onComplete, initialData = {} }: OnboardingFlowP
       });
 
       if (response.ok) {
+        // Show success message
+        setSubmitMessage('Profile setup completed successfully! Redirecting to dashboard...');
+
         // Redirect to dashboard after successful onboarding
-        router.push('/dashboard');
+        setTimeout(() => {
+          router.push('/dashboard');
+          router.refresh(); // Force refresh to update the UI
+        }, 1500);
+
         // Also call onComplete if provided (for backward compatibility)
         if (onComplete) onComplete();
       } else {
-        console.error('Failed to update profile');
+        const errorData = await response.json();
+        setSubmitMessage(`Error: ${errorData.error || 'Failed to update profile'}`);
       }
     } catch (error) {
       console.error('Error updating profile:', error);
@@ -231,7 +233,7 @@ export function OnboardingFlow({ onComplete, initialData = {} }: OnboardingFlowP
         return (
           <div className="space-y-4">
             <div>
-              <Label htmlFor="subscriptionPrice">Monthly Subscription Price *</Label>
+              <Label htmlFor="subscriptionPrice">Monthly Subscription Price (Optional)</Label>
               <div className="flex">
                 <span className="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm rounded-l-md">
                   ₦
@@ -245,11 +247,10 @@ export function OnboardingFlow({ onComplete, initialData = {} }: OnboardingFlowP
                   className="rounded-l-none"
                   min="1000"
                   max="100000"
-                  required
                 />
               </div>
               <p className="text-sm text-gray-500 mt-1">
-                Set your monthly subscription price (minimum ₦1,000)
+                Set your monthly subscription price (minimum ₦1,000) - you can set this up later
               </p>
             </div>
 
@@ -367,6 +368,12 @@ export function OnboardingFlow({ onComplete, initialData = {} }: OnboardingFlowP
           </CardHeader>
           <CardContent>
             {renderStepContent()}
+
+            {submitMessage && (
+              <div className={`p-4 rounded-lg mt-6 ${submitMessage.startsWith('Error') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
+                {submitMessage}
+              </div>
+            )}
 
             <div className="flex justify-between mt-8">
               <Button
