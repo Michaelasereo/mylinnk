@@ -92,7 +92,6 @@ export default async function DashboardPage() {
   if (!hasCompletedOnboarding) {
     return (
       <OnboardingFlow
-        onComplete={() => window.location.reload()}
         initialData={{
           username: creator.username,
           displayName: creator.displayName,

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { CheckCircle, User, Palette, Link as LinkIcon, Upload, DollarSign } from 'lucide-react';
 
 interface OnboardingFlowProps {
-  onComplete: () => void;
+  onComplete?: () => void;
   initialData?: {
     username?: string;
     displayName?: string;
@@ -54,6 +55,7 @@ const steps = [
 ];
 
 export function OnboardingFlow({ onComplete, initialData = {} }: OnboardingFlowProps) {
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState({
     username: initialData.username || '',
@@ -101,7 +103,10 @@ export function OnboardingFlow({ onComplete, initialData = {} }: OnboardingFlowP
       });
 
       if (response.ok) {
-        onComplete();
+        // Redirect to dashboard after successful onboarding
+        router.push('/dashboard');
+        // Also call onComplete if provided (for backward compatibility)
+        if (onComplete) onComplete();
       } else {
         console.error('Failed to update profile');
       }
