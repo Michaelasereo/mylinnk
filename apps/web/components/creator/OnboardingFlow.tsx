@@ -49,7 +49,14 @@ const steps = [
 
 export function OnboardingFlow({ onComplete, initialData = {} }: OnboardingFlowProps) {
   const router = useRouter();
-  const [currentStep, setCurrentStep] = useState(0);
+  const [currentStep, setCurrentStep] = useState(() => {
+    // Try to restore step from localStorage
+    if (typeof window !== 'undefined') {
+      const savedStep = localStorage.getItem('onboarding-step');
+      return savedStep ? parseInt(savedStep, 10) : 0;
+    }
+    return 0;
+  });
   const [formData, setFormData] = useState({
     username: initialData.username || '',
     displayName: initialData.displayName || '',
@@ -73,7 +80,9 @@ export function OnboardingFlow({ onComplete, initialData = {} }: OnboardingFlowP
 
   const handleNext = () => {
     if (currentStep < steps.length - 1) {
-      setCurrentStep(currentStep + 1);
+      const nextStep = currentStep + 1;
+      setCurrentStep(nextStep);
+      localStorage.setItem('onboarding-step', nextStep.toString());
     } else {
       handleSubmit();
     }
@@ -81,7 +90,9 @@ export function OnboardingFlow({ onComplete, initialData = {} }: OnboardingFlowP
 
   const handleBack = () => {
     if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
+      const prevStep = currentStep - 1;
+      setCurrentStep(prevStep);
+      localStorage.setItem('onboarding-step', prevStep.toString());
     }
   };
 
@@ -97,6 +108,9 @@ export function OnboardingFlow({ onComplete, initialData = {} }: OnboardingFlowP
       });
 
       if (response.ok) {
+        // Clear onboarding step from localStorage
+        localStorage.removeItem('onboarding-step');
+
         // Show success message
         setSubmitMessage('Profile setup completed successfully! Redirecting to dashboard...');
 
