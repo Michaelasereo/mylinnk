@@ -37,9 +37,9 @@ export default async function DashboardLayout({
 
   // User is a creator - show the sidebar layout
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex">
       <CreatorSidebar creator={creator} />
-      <main className="lg:pl-64">
+      <main className="flex-1 lg:ml-0">
         <div className="px-4 py-8 sm:px-6 lg:px-8">
           {children}
         </div>

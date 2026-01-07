@@ -66,7 +66,7 @@ export function CreatorSidebar({ creator }: CreatorSidebarProps) {
   };
 
   return (
-    <aside className="w-64 border-r bg-card fixed h-screen overflow-y-auto">
+    <aside className="w-64 border-r bg-card h-screen overflow-y-auto hidden lg:flex lg:flex-col">
       <div className="p-6 border-b">
         <Link href="/dashboard" className="flex items-center gap-3">
           <h2 className="text-xl font-bold">Odim</h2>
