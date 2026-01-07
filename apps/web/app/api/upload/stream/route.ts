@@ -199,7 +199,7 @@ export async function POST(request: Request) {
         title: file.name.replace(/\.[^/.]+$/, ""), // Remove extension
         description: '',
         type: 'video',
-        price: 0,
+        // NO price field - it doesn't exist in your Prisma schema!
         creatorId: creator.id,
         uploadId: uploadId,
         isPublished: false,
