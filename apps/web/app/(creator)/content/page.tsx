@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { prisma } from '@odim/database';
+import Link from 'next/link';
 import { ContentList } from '@/components/creator/ContentList';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CollectionsTab } from '@/components/creator/CollectionsTab';
@@ -75,11 +76,18 @@ export default async function ContentPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Content</h1>
-        <p className="text-muted-foreground">
-          Manage your content, collections, and intro video
-        </p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold">Content</h1>
+          <p className="text-muted-foreground">
+            Manage your content, collections, and intro video
+          </p>
+        </div>
+        <Link href="/dashboard/booking">
+          <Button variant="outline">
+            Manage Bookings
+          </Button>
+        </Link>
       </div>
 
       <Tabs defaultValue="content" className="w-full">
