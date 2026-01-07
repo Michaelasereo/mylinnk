@@ -1,7 +1,13 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { prisma } from '@odim/database';
+import { CreatorDashboard } from '@/components/creator/Dashboard';
 import { OnboardingPrompt } from '@/components/ui/onboarding-prompt';
+import {
+  getCreatorAnalytics,
+  getRecentSubscriptions,
+  getContentMetrics,
+} from '@/lib/actions/analytics';
 
 export default async function DashboardPage() {
   try {
@@ -17,27 +23,35 @@ export default async function DashboardPage() {
     // Check if user is a creator
     const creator = await prisma.creator.findUnique({
       where: { userId: session.user.id },
-      select: {
-        id: true,
-        username: true,
-        displayName: true,
-      },
     });
 
-    // If user is a creator, redirect to creator dashboard
-    if (creator) {
-      redirect('/creator/dashboard');
+    // If no creator account, show onboarding prompt
+    if (!creator) {
+      return (
+        <div className="min-h-screen bg-gray-50 py-8">
+          <OnboardingPrompt
+            userEmail={session.user.email || 'user'}
+            completedSteps={0}
+            totalSteps={4}
+          />
+        </div>
+      );
     }
 
-    // If user is not a creator, show onboarding prompt to become one
+    // Fetch data in parallel for existing creators
+    const [analytics, recentSubscriptions, contentMetrics] = await Promise.all([
+      getCreatorAnalytics(creator.id),
+      getRecentSubscriptions(creator.id),
+      getContentMetrics(creator.id),
+    ]);
+
     return (
-      <div className="min-h-screen bg-gray-50 py-8">
-        <OnboardingPrompt
-          userEmail={session.user.email || 'user'}
-          completedSteps={0}
-          totalSteps={4}
-        />
-      </div>
+      <CreatorDashboard
+        creator={creator}
+        analytics={analytics}
+        recentSubscriptions={recentSubscriptions}
+        contentMetrics={contentMetrics}
+      />
     );
   } catch (error) {
     console.error('Dashboard error:', error);

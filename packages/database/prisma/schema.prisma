@@ -206,8 +206,9 @@ model Content {
   type          String   // video, image, pdf, text
   thumbnailUrl  String?  @map("thumbnail_url")
 
-  // Video specific
-  videoId       String?  @map("video_id") // Cloudflare Stream ID
+  // Video specific (Mux)
+  muxAssetId    String?  @map("mux_asset_id") // Mux asset ID
+  muxPlaybackId String?  @map("mux_playback_id") // Mux playback ID
   durationSeconds Int?   @map("duration_seconds")
   fileSizeBytes BigInt?  @map("file_size_bytes")
 

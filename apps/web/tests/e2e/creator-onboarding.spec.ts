@@ -32,7 +32,7 @@ test('creator onboarding flow', async ({ page }) => {
   await page.click('button:has-text("Complete Setup")');
 
   // 7. Verify success
-  await expect(page).toHaveURL('/creator/dashboard');
+  await expect(page).toHaveURL('/dashboard');
   await expect(page.locator('h1')).toContainText('Welcome back');
 });
 

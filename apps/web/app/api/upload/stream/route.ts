@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withCreatorSessionValidation } from '@/lib/auth/session-middleware';
 import { withRateLimit, rateLimiters } from '@/lib/rate-limit/rate-limiter';
-
-const STREAM_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
-const STREAM_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
-const STREAM_BASE_URL = `https://api.cloudflare.com/client/v4/accounts/${STREAM_ACCOUNT_ID}/stream`;
+import MuxService from '@/lib/mux';
 
 export async function POST(request: NextRequest) {
   return withCreatorSessionValidation(request, async (session, user) => {
@@ -28,46 +25,40 @@ export async function POST(request: NextRequest) {
         );
       }
 
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
+      const formData = await request.formData();
+      const file = formData.get('file') as File;
 
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
-    }
+      if (!file) {
+        return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      }
 
-    // Upload to Cloudflare Stream
-    const uploadFormData = new FormData();
-    uploadFormData.append('file', file);
+      // Validate file type (video files only)
+      if (!file.type.startsWith('video/')) {
+        return NextResponse.json({ error: 'Only video files are allowed' }, { status: 400 });
+      }
 
-    const response = await fetch(STREAM_BASE_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${STREAM_API_TOKEN}`,
-      },
-      body: uploadFormData,
-    });
+      // Validate file size (max 2GB for Mux)
+      const maxSize = 2 * 1024 * 1024 * 1024; // 2GB
+      if (file.size > maxSize) {
+        return NextResponse.json({ error: 'File size exceeds 2GB limit' }, { status: 400 });
+      }
 
-    if (!response.ok) {
-      const error = await response.json();
-      return NextResponse.json(
-        { error: error.message || 'Failed to upload video' },
-        { status: response.status }
-      );
-    }
+      // Create Mux direct upload URL
+      const uploadResult = await MuxService.createDirectUpload();
 
-      const data = await response.json();
       return NextResponse.json(
         {
-          videoId: data.result.uid,
-          thumbnail: data.result.thumbnail,
-          playback: data.result.playback,
+          muxAssetId: uploadResult.assetId,
+          muxPlaybackId: uploadResult.playbackId,
+          uploadUrl: uploadResult.uploadUrl,
+          uploadId: uploadResult.uploadId,
         },
         { headers: rateLimitResult.headers }
       );
     } catch (error) {
-      console.error('Error uploading to Stream:', error);
+      console.error('Error creating Mux upload:', error);
       return NextResponse.json(
-        { error: 'Failed to upload video' },
+        { error: 'Failed to create video upload' },
         { status: 500 }
       );
     }

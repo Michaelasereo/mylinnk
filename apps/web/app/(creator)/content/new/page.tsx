@@ -61,7 +61,9 @@ export default function NewContentPage() {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [uploadedFile, setUploadedFile] = useState<{
     url?: string;
-    videoId?: string;
+    muxAssetId?: string;
+    muxPlaybackId?: string;
+    uploadUrl?: string;
     thumbnail?: string;
     fileName?: string;
   } | null>(null);
@@ -126,9 +128,9 @@ export default function NewContentPage() {
       
       if (contentType === 'video') {
         setUploadedFile({
-          videoId: data.videoId,
-          thumbnail: data.thumbnail,
-          url: data.playback?.hls || data.playback?.dash,
+          muxAssetId: data.muxAssetId,
+          muxPlaybackId: data.muxPlaybackId,
+          uploadUrl: data.uploadUrl,
         });
       } else {
         setUploadedFile({
@@ -173,8 +175,8 @@ export default function NewContentPage() {
         ...data,
         tags: [],
         requiredPlanId: undefined,
-        videoId: uploadedFile?.videoId,
-        thumbnailUrl: uploadedFile?.thumbnail || uploadedFile?.url,
+        muxAssetId: uploadedFile?.muxAssetId,
+        muxPlaybackId: uploadedFile?.muxPlaybackId,
         contentCategory: data.contentCategory,
         collectionId: data.collectionId || undefined,
         tutorialPrice: tutorialPriceKobo,
@@ -457,9 +459,9 @@ export default function NewContentPage() {
                             <p className="text-sm font-medium">
                               {uploadedFile.fileName || 'File uploaded'}
                             </p>
-                            {uploadedFile.videoId && (
+                            {uploadedFile.muxPlaybackId && (
                               <p className="text-xs text-muted-foreground">
-                                Video ID: {uploadedFile.videoId}
+                                Playback ID: {uploadedFile.muxPlaybackId}
                               </p>
                             )}
                           </div>

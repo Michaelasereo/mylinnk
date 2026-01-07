@@ -125,7 +125,7 @@ export async function createCreatorProfile(
       data: { isCreator: true },
     });
 
-    revalidatePath('/creator/dashboard');
+    revalidatePath('/dashboard');
     return { success: true, creatorId: creator.id, username: finalUsername };
   } catch (error) {
     console.error('Error creating creator profile:', error);

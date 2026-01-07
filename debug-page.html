@@ -227,7 +227,7 @@ console.log('🎯 Debug complete - check results above');
 
             try {
                 // Check if user can access protected creator routes
-                const dashboardResponse = await fetch(`${baseUrl}/creator/dashboard`, {
+                const dashboardResponse = await fetch(`${baseUrl}/dashboard`, {
                     method: 'HEAD',
                     credentials: 'include'
                 });
@@ -262,7 +262,7 @@ console.log('🎯 Debug complete - check results above');
                 report += '<div class="success">✅ User authentication: Working<br>';
                 report += '❌ Creator account: Not found</div>';
                 report += '<div class="info">💡 <strong>Onboarding prompts now appear directly on creator pages!</strong><br>';
-                report += 'Visit any creator page (/creator/dashboard, /creator/settings, etc.) to see the setup prompt.</div>';
+                report += 'Visit any creator page (/dashboard, /creator/settings, etc.) to see the setup prompt.</div>';
 
                 recommendations.push('Visit any creator page to see the onboarding prompt');
                 recommendations.push('Complete the 4-step setup process');
@@ -336,7 +336,7 @@ console.log('🎯 Debug complete - check results above');
             report += '<br><strong>🎯 Next Steps:</strong><br>';
 
             if (authStatus === 'authenticated_no_creator') {
-                report += `1. <a href="${baseUrl}/creator/dashboard" target="_blank">Visit Creator Dashboard</a> to see onboarding prompt<br>`;
+                report += `1. <a href="${baseUrl}/dashboard" target="_blank">Visit Creator Dashboard</a> to see onboarding prompt<br>`;
                 report += '2. Complete the 4-step setup process<br>';
                 report += '3. Upload profile and banner images in settings<br>';
                 report += '4. View your creator profile to see the images<br>';

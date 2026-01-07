@@ -1,5 +1,30 @@
 # Phase 2 Environment Variables
 
+## Required for Hybrid Video Storage (Mux + Cloudflare R2)
+
+Add these environment variables to your `.env.local` file:
+
+```bash
+# Mux Video Processing
+MUX_TOKEN_ID=53a3aa7e-b5df-435e-9c2d-648fba0ac091
+MUX_TOKEN_SECRET=lspa398gqX6VCK0tDy1nl995nZlqgCHX4yiyDPZAj2u2mQ5hNm6rwW5yhTt1txkvw33GjEJXbvT
+MUX_ENVIRONMENT_KEY=3mjr1043bu0i7cn9ai2sc40fg
+
+# Existing Cloudflare R2 (for images and files)
+CLOUDFLARE_ACCOUNT_ID=your_account_id
+CLOUDFLARE_R2_ACCESS_KEY_ID=your_r2_access_key
+CLOUDFLARE_R2_SECRET_ACCESS_KEY=your_r2_secret_key
+CLOUDFLARE_R2_BUCKET_NAME=your_bucket_name
+CLOUDFLARE_R2_PUBLIC_URL=https://pub-youraccount.r2.dev
+```
+
+### Installation Steps for Mux
+
+```bash
+cd apps/web
+npm install @mux/mux-node @mux/mux-player-react
+```
+
 ## Required for Webhook Queue System
 
 Add these environment variables to your `.env.local` file:

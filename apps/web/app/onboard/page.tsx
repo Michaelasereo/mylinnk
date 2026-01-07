@@ -209,7 +209,7 @@ export default function OnboardingPage() {
         description: 'Creator profile created successfully!',
       });
 
-      router.push('/creator/dashboard');
+      router.push('/dashboard');
     } catch (error) {
       const errorInfo = handleError(error, { operation: 'onboarding' });
       toast({

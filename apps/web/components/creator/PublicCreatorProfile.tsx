@@ -37,6 +37,7 @@ import {
   Lock,
   ArrowRight,
 } from 'lucide-react';
+import { MuxVideoPlayer } from '@/components/ui/mux-player';
 import { PriceListModal } from '@/components/booking/PriceListModal';
 import { BookingModal } from '@/components/booking/BookingModal';
 import { SubscriptionModal } from '@/components/creator/SubscriptionModal';
@@ -54,7 +55,8 @@ interface Content {
   createdAt: Date;
   accessType: string;
   contentCategory: string;
-  videoId: string | null;
+  muxAssetId: string | null;
+  muxPlaybackId: string | null;
 }
 
 interface CreatorLink {
@@ -107,7 +109,8 @@ interface Creator {
   introVideo: {
     id: string;
     title: string;
-    videoId: string | null;
+    muxAssetId: string | null;
+  muxPlaybackId: string | null;
     thumbnailUrl: string | null;
     description: string | null;
   } | null;
@@ -187,14 +190,14 @@ export function PublicCreatorProfile({
   const handleContentClick = (content: Content) => {
     if (content.accessType === 'free') {
       // Free content - play directly
-      if (content.type === 'video' && content.videoId) {
+      if (content.type === 'video' && content.muxPlaybackId) {
         setPlayingVideoId(content.id);
       }
     } else {
       // Premium content - check if verified
       if (verifiedContentIds.has(content.id)) {
         // Already verified - play
-        if (content.type === 'video' && content.videoId) {
+        if (content.type === 'video' && content.muxPlaybackId) {
           setPlayingVideoId(content.id);
         }
       } else {
@@ -353,7 +356,7 @@ export function PublicCreatorProfile({
         )}
 
         {/* Intro Video Section */}
-        {creator.introVideo && creator.introVideo.videoId && (
+        {creator.introVideo && creator.introVideo.muxPlaybackId && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -363,10 +366,11 @@ export function PublicCreatorProfile({
             </CardHeader>
             <CardContent>
               <div className="aspect-video bg-muted rounded-lg overflow-hidden">
-                <iframe
-                  src={`https://customer-${process.env.NEXT_PUBLIC_CLOUDFLARE_ACCOUNT_ID}.cloudflarestream.com/${creator.introVideo.videoId}/iframe`}
+                <MuxVideoPlayer
+                  playbackId={creator.introVideo.muxPlaybackId}
+                  assetId={creator.introVideo.muxAssetId || undefined}
+                  title="Creator Introduction"
                   className="w-full h-full"
-                  allowFullScreen
                 />
               </div>
               {creator.introVideo.title && (
@@ -550,14 +554,15 @@ export function PublicCreatorProfile({
         <DialogContent className="max-w-4xl p-0 overflow-hidden">
           {playingVideoId && (() => {
             const content = [...regularContent, ...tutorials].find(c => c.id === playingVideoId);
-            if (!content?.videoId) return null;
+            if (!content?.muxPlaybackId) return null;
             return (
               <>
                 <div className="aspect-video bg-black">
-                  <iframe
-                    src={`https://customer-${process.env.NEXT_PUBLIC_CLOUDFLARE_ACCOUNT_ID}.cloudflarestream.com/${content.videoId}/iframe`}
+                  <MuxVideoPlayer
+                    playbackId={content.muxPlaybackId}
+                    assetId={content.muxAssetId || undefined}
+                    title={content.title}
                     className="w-full h-full"
-                    allowFullScreen
                   />
                 </div>
                 <div className="p-4">

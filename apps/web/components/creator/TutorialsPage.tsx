@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { BookOpen, ArrowLeft, Play, Lock, Video, Library } from 'lucide-react';
 import { PremiumAccessModal } from './PremiumAccessModal';
+import { MuxVideoPlayer } from '@/components/ui/mux-player';
 import { CollectionSubscriptionModal } from './CollectionSubscriptionModal';
 import { TutorialPurchaseModal } from './TutorialPurchaseModal';
 import { getStoredVerifiedAccess, storeVerifiedAccess } from '@/lib/utils/tutorial-access';
@@ -42,7 +43,8 @@ interface Content {
   viewCount: number;
   createdAt: Date;
   accessType: string;
-  videoId: string | null;
+  muxAssetId: string | null;
+  muxPlaybackId: string | null;
   tutorialPrice: number | null;
   collectionId: string | null;
   collection?: Collection | null;
@@ -89,7 +91,7 @@ export function TutorialsPage({
   const handleContentClick = (content: Content) => {
     // Free content - play directly
     if (content.accessType === 'free') {
-      if (content.type === 'video' && content.videoId) {
+      if (content.type === 'video' && content.muxPlaybackId) {
         setPlayingVideoId(content.id);
       }
       return;
@@ -97,7 +99,7 @@ export function TutorialsPage({
 
     // Already verified - play
     if (verifiedContentIds.has(content.id)) {
-      if (content.type === 'video' && content.videoId) {
+      if (content.type === 'video' && content.muxPlaybackId) {
         setPlayingVideoId(content.id);
       }
       return;
@@ -108,7 +110,7 @@ export function TutorialsPage({
       // Check if collection is verified
       if (verifiedCollectionIds.has(content.collectionId)) {
         // Collection is verified - play
-        if (content.type === 'video' && content.videoId) {
+        if (content.type === 'video' && content.muxPlaybackId) {
           setPlayingVideoId(content.id);
         }
         return;
@@ -118,7 +120,7 @@ export function TutorialsPage({
       const storedAccess = getStoredVerifiedAccess('collection', content.collectionId);
       if (storedAccess) {
         setVerifiedCollectionIds(prev => new Set([...prev, content.collectionId!]));
-        if (content.type === 'video' && content.videoId) {
+        if (content.type === 'video' && content.muxPlaybackId) {
           setPlayingVideoId(content.id);
         }
         return;
@@ -137,7 +139,7 @@ export function TutorialsPage({
     const storedTutorialAccess = getStoredVerifiedAccess('tutorial', content.id);
     if (storedTutorialAccess) {
       setVerifiedContentIds(prev => new Set([...prev, content.id]));
-      if (content.type === 'video' && content.videoId) {
+      if (content.type === 'video' && content.muxPlaybackId) {
         setPlayingVideoId(content.id);
       }
       return;
@@ -397,14 +399,15 @@ export function TutorialsPage({
             const content = [...freeTutorials, ...paidTutorials].find(
               (c) => c.id === playingVideoId
             );
-            if (!content?.videoId) return null;
+            if (!content?.muxPlaybackId) return null;
             return (
               <>
                 <div className="aspect-video bg-black">
-                  <iframe
-                    src={`https://customer-${process.env.NEXT_PUBLIC_CLOUDFLARE_ACCOUNT_ID}.cloudflarestream.com/${content.videoId}/iframe`}
+                  <MuxVideoPlayer
+                    playbackId={content.muxPlaybackId}
+                    assetId={content.muxAssetId || undefined}
+                    title={content.title}
                     className="w-full h-full"
-                    allowFullScreen
                   />
                 </div>
                 <div className="p-4">

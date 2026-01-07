@@ -87,7 +87,7 @@ export async function requestPayout(
     });
 
     // Revalidate dashboard
-    revalidatePath('/creator/dashboard');
+    revalidatePath('/dashboard');
     revalidatePath('/creator/payouts');
 
     return {
