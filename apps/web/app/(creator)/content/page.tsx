@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { prisma } from '@odim/database';
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import { ContentList } from '@/components/creator/ContentList';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CollectionsTab } from '@/components/creator/CollectionsTab';
