@@ -28,6 +28,8 @@ model User {
   creatorProfile      Creator?
   fanSubscriptions    FanSubscription[] @relation("FanSubscriptions")
   transactions        Transaction[]
+  usageRecords        UsageRecord[]
+  uploads             Upload[]
 
   @@map("users")
   @@index([email])
@@ -136,6 +138,7 @@ model Creator {
   availability      CreatorAvailability[]
   bookings          Booking[]
   emailSubscriptions EmailSubscription[]
+  uploads           Upload[]
 
   @@map("creators")
   @@index([userId])
@@ -206,6 +209,9 @@ model Content {
   type          String   // video, image, pdf, text
   thumbnailUrl  String?  @map("thumbnail_url")
 
+  // Upload tracking
+  uploadId      String?  @unique @map("upload_id") // Link to upload record
+
   // Video specific (Mux)
   muxAssetId    String?  @map("mux_asset_id") // Mux asset ID
   muxPlaybackId String?  @map("mux_playback_id") // Mux playback ID
@@ -242,6 +248,7 @@ model Content {
   introVideoFor    Creator[]       @relation("IntroVideo")
   premiumAccessCodes PremiumAccessCode[]
   tutorialPurchases TutorialPurchase[]
+  upload           Upload?         @relation(fields: [uploadId], references: [id])
 
   @@map("content")
   @@index([creatorId])
@@ -627,5 +634,72 @@ model TutorialPurchase {
   @@map("tutorial_purchases")
   @@index([contentId])
   @@index([email])
+}
+
+// Upload tracking for video processing
+model Upload {
+  id            String    @id @default(cuid())
+  userId        String    @map("user_id")
+  creatorId     String    @map("creator_id")
+  filename      String
+  mimeType      String    @map("mime_type")
+  size          BigInt    // File size in bytes
+  status        UploadStatus @default(PENDING)
+  muxAssetId    String?   @map("mux_asset_id")
+  muxPlaybackId String?   @map("mux_playback_id")
+  url           String?   // Final playback URL
+  error         String?   // Error message if failed
+  metadata      Json?     // Additional processing data
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  failedAt    DateTime? @map("failed_at")
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  content Content?
+
+  @@map("uploads")
+  @@index([userId, status])
+  @@index([creatorId])
+  @@index([status, createdAt])
+}
+
+enum UploadStatus {
+  PENDING
+  UPLOADING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// Usage tracking for cost monitoring and quotas
+enum UsageType {
+  UPLOAD
+  STORAGE
+  BANDWIDTH
+  TRANSCODING
+}
+
+model UsageRecord {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  type      UsageType
+  provider  String    // 'mux', 'r2', 'paystack', etc.
+  amount    Float     // Amount used (GB, minutes, etc.)
+  cost      Float     // Cost in USD
+  metadata  Json?     // Additional data (file size, duration, etc.)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("usage_records")
+  @@index([userId, type, createdAt])
+  @@index([createdAt])
 }
 

@@ -236,7 +236,8 @@ export async function getCreatorProfile() {
           select: {
             id: true,
             title: true,
-            videoId: true,
+            muxAssetId: true,
+            muxPlaybackId: true,
             thumbnailUrl: true,
           },
         },
@@ -278,7 +279,8 @@ export async function getPublicCreatorProfile(username: string) {
           select: {
             id: true,
             title: true,
-            videoId: true,
+            muxAssetId: true,
+            muxPlaybackId: true,
             thumbnailUrl: true,
             description: true,
           },

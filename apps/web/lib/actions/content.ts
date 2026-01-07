@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server';
 import { prisma } from '@odim/database';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
+import { mediaProcessingQueueInstance as mediaProcessingQueue } from '@/lib/queue/processing-queue';
+import { systemMonitor } from '@/lib/monitoring/system-monitor';
 
 const createContentSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -19,6 +21,7 @@ const createContentSchema = z.object({
   contentCategory: z.enum(['content', 'tutorial']).default('content'),
   collectionId: z.string().optional(), // Link tutorial to collection
   tutorialPrice: z.number().optional(), // Individual tutorial price in kobo
+  processingJobId: z.string().optional(), // Link to background processing job
 });
 
 export async function createContent(
@@ -61,11 +64,24 @@ export async function createContent(
         publishedAt: data.isPublished ? new Date() : null,
         muxAssetId: data.muxAssetId,
         muxPlaybackId: data.muxPlaybackId,
+        thumbnailUrl: data.thumbnailUrl,
         contentCategory: data.contentCategory || 'content',
         collectionId: data.collectionId || null,
         tutorialPrice: data.tutorialPrice || null,
       },
     });
+
+    // Update processing job with content ID if it exists
+    if (data.processingJobId) {
+      // Note: In a production system, you'd want to update the job metadata
+      // For now, we'll track that the content was created successfully
+      systemMonitor.increment('content.created');
+      systemMonitor.increment(`content.${data.type}.created`);
+    }
+
+    // Track content creation metrics
+    systemMonitor.trackBilling(0, 'content_creation', creator.id);
+    systemMonitor.increment('content.total');
 
     revalidatePath('/content');
     revalidatePath('/content/tutorials');
@@ -259,13 +275,14 @@ export async function getMyVideoContent() {
       where: {
         creatorId: creator.id,
         type: 'video',
-        videoId: { not: null },
+        muxPlaybackId: { not: null },
       },
       select: {
         id: true,
         title: true,
         thumbnailUrl: true,
-        videoId: true,
+        muxAssetId: true,
+        muxPlaybackId: true,
       },
       orderBy: { createdAt: 'desc' },
     });

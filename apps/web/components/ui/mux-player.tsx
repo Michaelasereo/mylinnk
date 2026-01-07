@@ -1,7 +1,6 @@
 'use client';
 
-import MuxPlayer from '@mux/mux-player-react';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 interface MuxVideoPlayerProps {
   playbackId: string;
@@ -32,6 +31,34 @@ export function MuxVideoPlayer({
 }: MuxVideoPlayerProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Load Mux player script dynamically
+  useEffect(() => {
+    // Check if Mux player script is already loaded
+    if (window.mux && window.mux.player) {
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/@mux/mux-player@2.7.0/dist/index.js';
+    script.async = true;
+    script.onload = () => {
+      console.log('Mux player loaded successfully');
+    };
+    script.onerror = () => {
+      console.warn('Failed to load Mux player, falling back to HTML5 video');
+    };
+
+    document.head.appendChild(script);
+
+    return () => {
+      // Cleanup script if component unmounts
+      if (document.head.contains(script)) {
+        document.head.removeChild(script);
+      }
+    };
+  }, []);
 
   const handleLoadStart = () => {
     setIsLoading(true);
@@ -45,7 +72,7 @@ export function MuxVideoPlayer({
   const handleError = (e: any) => {
     setIsLoading(false);
     setError('Failed to load video');
-    console.error('Mux player error:', e);
+    console.error('Video player error:', e);
   };
 
   const handlePlay = () => {
@@ -59,6 +86,9 @@ export function MuxVideoPlayer({
   const handleEnded = () => {
     onEnded?.();
   };
+
+  // Mux playback URL
+  const playbackUrl = `https://stream.mux.com/${playbackId}.m3u8`;
 
   if (error) {
     return (
@@ -79,31 +109,70 @@ export function MuxVideoPlayer({
         </div>
       )}
 
-      <MuxPlayer
-        playbackId={playbackId}
-        metadata={{
-          video_id: assetId,
-          video_title: title,
-        }}
-        poster={thumbnailUrl}
-        className="w-full h-full rounded-lg"
-        autoplay={autoplay}
-        muted={muted}
-        controls={controls}
-        onLoadStart={handleLoadStart}
-        onCanPlay={handleCanPlay}
-        onError={handleError}
-        onPlay={handlePlay}
-        onPause={handlePause}
-        onEnded={handleEnded}
-        style={{
-          aspectRatio: '16/9',
-          width: '100%',
-          height: 'auto',
-        }}
-      />
+      {/* Try to use Mux player if available, fallback to HTML5 video */}
+      {typeof window !== 'undefined' && window.mux && window.mux.player ? (
+        <mux-player
+          playback-id={playbackId}
+          metadata-video-id={assetId}
+          metadata-video-title={title}
+          poster={thumbnailUrl}
+          controls={controls ? 'true' : 'false'}
+          autoplay={autoplay ? 'true' : 'false'}
+          muted={muted ? 'true' : 'false'}
+          style={{
+            width: '100%',
+            height: 'auto',
+            aspectRatio: '16/9',
+            borderRadius: '0.5rem',
+          }}
+          onLoadStart={handleLoadStart}
+          onCanPlay={handleCanPlay}
+          onError={handleError}
+          onPlay={handlePlay}
+          onPause={handlePause}
+          onEnded={handleEnded}
+        />
+      ) : (
+        <video
+          ref={videoRef}
+          src={playbackUrl}
+          poster={thumbnailUrl}
+          className="w-full h-full rounded-lg"
+          controls={controls}
+          autoPlay={autoplay}
+          muted={muted}
+          onLoadStart={handleLoadStart}
+          onCanPlay={handleCanPlay}
+          onError={handleError}
+          onPlay={handlePlay}
+          onPause={handlePause}
+          onEnded={handleEnded}
+          style={{
+            aspectRatio: '16/9',
+            width: '100%',
+            height: 'auto',
+          }}
+          preload="metadata"
+        >
+          <p className="text-gray-500 text-sm">
+            Your browser doesn't support HTML5 video.
+            <a href={playbackUrl} className="text-blue-600 underline ml-1">
+              Download the video
+            </a>
+          </p>
+        </video>
+      )}
     </div>
   );
+}
+
+// Add TypeScript declarations for Mux player
+declare global {
+  interface Window {
+    mux?: {
+      player?: any;
+    };
+  }
 }
 
 export default MuxVideoPlayer;

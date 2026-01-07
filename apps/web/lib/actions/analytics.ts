@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { prisma } from '@odim/database';
+import { serializePrismaObject } from '@/lib/utils/serialization';
 
 export async function getCreatorAnalytics(creatorId: string) {
   const supabase = await createClient();
@@ -53,13 +54,16 @@ export async function getCreatorAnalytics(creatorId: string) {
       0
     );
 
-    return {
+    const result = {
       totalViews: contentStats._sum.viewCount || 0,
       contentCount: contentStats._count.id || 0,
       subscriberCount: subscriptionStats._count.id || 0,
       totalRevenue,
       recentTransactions,
     };
+
+    // Serialize all Prisma special types
+    return serializePrismaObject(result);
   } catch (error) {
     console.error('Error fetching analytics:', error);
     return null;
@@ -88,7 +92,8 @@ export async function getRecentSubscriptions(creatorId: string) {
       take: 10,
     });
 
-    return subscriptions;
+    // Serialize all Prisma special types
+    return serializePrismaObject(subscriptions);
   } catch (error) {
     console.error('Error fetching subscriptions:', error);
     return [];
@@ -111,7 +116,8 @@ export async function getContentMetrics(creatorId: string) {
       },
     });
 
-    return { topContent };
+    // Serialize all Prisma special types
+    return serializePrismaObject({ topContent });
   } catch (error) {
     console.error('Error fetching content metrics:', error);
     return { topContent: [] };

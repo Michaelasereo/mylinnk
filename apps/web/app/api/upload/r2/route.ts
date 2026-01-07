@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withCreatorSessionValidation } from '@/lib/auth/session-middleware';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { withRateLimit, rateLimiters } from '@/lib/rate-limit/rate-limiter';
+import { uploadSecurity } from '@/lib/security/upload-security';
+import { costMonitor } from '@/lib/billing/cost-monitor';
+import { uploadGateway } from '@/lib/upload/upload-gateway';
+import { mediaProcessingQueue } from '@/lib/queue/processing-queue';
+import { systemMonitor } from '@/lib/monitoring/system-monitor';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 const R2_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
 const R2_ACCESS_KEY_ID = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
@@ -18,45 +24,117 @@ const s3Client = new S3Client({
 });
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+
   return withCreatorSessionValidation(request, async (session, user) => {
     try {
+      // Apply rate limiting for uploads
+      const rateLimitResult = await withRateLimit(request, rateLimiters.upload);
 
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const fileName = formData.get('fileName') as string;
+      if (!rateLimitResult.allowed) {
+        systemMonitor.trackApiCall('/api/upload/r2', 'POST', 429, Date.now() - startTime, user.id);
+        return NextResponse.json(
+          {
+            error: 'Upload rate limit exceeded. Please try again later.',
+            retryAfter: Math.ceil((rateLimitResult.result.resetTime - Date.now()) / 1000),
+          },
+          {
+            status: 429,
+            headers: {
+              ...rateLimitResult.headers,
+              'Retry-After': Math.ceil((rateLimitResult.result.resetTime - Date.now()) / 1000).toString(),
+            },
+          }
+        );
+      }
 
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
-    }
+      const formData = await request.formData();
+      const file = formData.get('file') as File;
+      const fileName = formData.get('fileName') as string;
 
-    // Generate unique filename
-    const timestamp = Date.now();
-    const sanitizedFileName = fileName || file.name;
-    const fileExtension = sanitizedFileName.split('.').pop();
-    const uniqueFileName = `${session.user.id}/${timestamp}-${sanitizedFileName}`;
+      if (!file) {
+        systemMonitor.trackApiCall('/api/upload/r2', 'POST', 400, Date.now() - startTime, user.id);
+        return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      }
 
-    // Convert File to Buffer
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+      // Comprehensive security validation
+      const validation = await uploadSecurity.validateFile(file, user.id, 'image');
+      if (!validation.valid) {
+        systemMonitor.trackApiCall('/api/upload/r2', 'POST', 400, Date.now() - startTime, user.id);
+        systemMonitor.increment('uploads.security_blocked');
+        return NextResponse.json({
+          error: validation.error,
+          warnings: validation.warnings
+        }, { status: 400 });
+      }
 
-    // Upload to R2
-    const command = new PutObjectCommand({
-      Bucket: R2_BUCKET_NAME!,
-      Key: uniqueFileName,
-      Body: buffer,
-      ContentType: file.type,
-    });
+      // Check user quota
+      const quotaCheck = await costMonitor.checkUserQuota(user.id, 'storage', file.size);
+      if (!quotaCheck.allowed) {
+        systemMonitor.trackApiCall('/api/upload/r2', 'POST', 402, Date.now() - startTime, user.id);
+        return NextResponse.json({
+          error: 'Storage quota exceeded',
+          currentUsage: quotaCheck.currentUsage,
+          limit: quotaCheck.limit,
+          resetDate: quotaCheck.resetDate
+        }, { status: 402 });
+      }
 
-    await s3Client.send(command);
+      // Estimate and deduct cost upfront
+      const costEstimate = await costMonitor.estimateUploadCost(file.size, 'image', user.id);
+      const costDeducted = await costMonitor.deductFromBalance(user.id, {
+        amount: BigInt(Math.ceil(costEstimate.total * 100)), // Convert to kobo
+        currency: 'NGN'
+      });
 
-    // Return public URL
-    const publicUrl = R2_PUBLIC_URL
-      ? `${R2_PUBLIC_URL}/${uniqueFileName}`
-      : `https://pub-${R2_ACCOUNT_ID}.r2.dev/${R2_BUCKET_NAME}/${uniqueFileName}`;
+      if (!costDeducted) {
+        systemMonitor.trackApiCall('/api/upload/r2', 'POST', 402, Date.now() - startTime, user.id);
+        return NextResponse.json({
+          error: 'Insufficient balance for upload',
+          estimatedCost: costEstimate
+        }, { status: 402 });
+      }
 
-      return NextResponse.json({ url: publicUrl, fileName: uniqueFileName });
+      // Upload via gateway (with failover)
+      const uploadResult = await uploadGateway.upload(file, 'image', user.id);
+
+      // Queue for processing
+      const processingJobId = await mediaProcessingQueue.addJob({
+        contentId: '', // Will be set when content is created
+        assetId: uploadResult.assetId,
+        userId: user.id,
+        contentType: 'image',
+        provider: uploadResult.provider as any,
+        fileName: file.name,
+        fileSize: file.size
+      });
+
+      // Track successful upload
+      systemMonitor.trackUpload(user.id, 'image', uploadResult.provider, true, Date.now() - startTime, file.size);
+      systemMonitor.trackApiCall('/api/upload/r2', 'POST', 200, Date.now() - startTime, user.id);
+
+      return NextResponse.json(
+        {
+          url: uploadResult.url,
+          fileName: uploadResult.assetId,
+          provider: uploadResult.provider,
+          processingJobId,
+          estimatedCost: costEstimate,
+          warnings: validation.warnings
+        },
+        { headers: rateLimitResult.headers }
+      );
     } catch (error) {
+      const duration = Date.now() - startTime;
+      systemMonitor.trackApiCall('/api/upload/r2', 'POST', 500, duration, user.id);
+      systemMonitor.increment('uploads.failed');
+      systemMonitor.increment('errors.total');
+
       console.error('Error uploading to R2:', error);
+
+      // Refund cost on failure
+      // TODO: Implement refund logic
+
       return NextResponse.json(
         { error: 'Failed to upload file' },
         { status: 500 }

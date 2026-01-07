@@ -23,7 +23,8 @@ export default async function ContentPage() {
         select: {
           id: true,
           title: true,
-          videoId: true,
+          muxAssetId: true,
+          muxPlaybackId: true,
           thumbnailUrl: true,
         },
       },
@@ -60,12 +61,13 @@ export default async function ContentPage() {
     where: {
       creatorId: creator.id,
       type: 'video',
-      videoId: { not: null },
+      muxPlaybackId: { not: null },
     },
     select: {
       id: true,
       title: true,
-      videoId: true,
+      muxAssetId: true,
+      muxPlaybackId: true,
       thumbnailUrl: true,
     },
     orderBy: { createdAt: 'desc' },

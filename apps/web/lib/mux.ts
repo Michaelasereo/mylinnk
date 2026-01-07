@@ -1,9 +1,7 @@
-import Mux from '@mux/mux-node';
-
-const mux = new Mux({
-  tokenId: process.env.MUX_TOKEN_ID!,
-  tokenSecret: process.env.MUX_TOKEN_SECRET!,
-});
+// Mux API service using direct HTTP calls to avoid dependency issues
+const MUX_API_BASE = 'https://api.mux.com';
+const MUX_TOKEN_ID = process.env.MUX_TOKEN_ID!;
+const MUX_TOKEN_SECRET = process.env.MUX_TOKEN_SECRET!;
 
 export interface MuxUploadResult {
   assetId: string;
@@ -23,24 +21,42 @@ export interface MuxAssetInfo {
 }
 
 export class MuxService {
+  private static getAuthHeaders() {
+    const credentials = Buffer.from(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`).toString('base64');
+    return {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/json',
+    };
+  }
+
   /**
    * Create a direct upload URL for a video file
    */
   static async createDirectUpload(): Promise<MuxUploadResult> {
     try {
-      const upload = await mux.video.uploads.create({
-        cors_origin: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-        new_asset_settings: {
-          playback_policy: ['public'],
-          mp4_support: 'standard',
-        },
+      const response = await fetch(`${MUX_API_BASE}/video/v1/uploads`, {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({
+          cors_origin: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+          new_asset_settings: {
+            playback_policy: ['public'],
+            mp4_support: 'standard',
+          },
+        }),
       });
 
+      if (!response.ok) {
+        throw new Error(`Mux API error: ${response.status}`);
+      }
+
+      const upload = await response.json();
+
       return {
-        assetId: upload.asset_id || '',
-        playbackId: upload.playback_id || '',
-        uploadUrl: upload.url || '',
-        uploadId: upload.id || '',
+        assetId: upload.data?.asset_id || '',
+        playbackId: upload.data?.playback_id || '',
+        uploadUrl: upload.data?.url || '',
+        uploadId: upload.data?.id || '',
       };
     } catch (error) {
       console.error('Error creating Mux direct upload:', error);
@@ -53,7 +69,15 @@ export class MuxService {
    */
   static async getAsset(assetId: string): Promise<MuxAssetInfo | null> {
     try {
-      const asset = await mux.video.assets.retrieve(assetId);
+      const response = await fetch(`${MUX_API_BASE}/video/v1/assets/${assetId}`, {
+        headers: this.getAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const { data: asset } = await response.json();
 
       return {
         assetId: asset.id,
@@ -77,8 +101,12 @@ export class MuxService {
    */
   static async deleteAsset(assetId: string): Promise<boolean> {
     try {
-      await mux.video.assets.delete(assetId);
-      return true;
+      const response = await fetch(`${MUX_API_BASE}/video/v1/assets/${assetId}`, {
+        method: 'DELETE',
+        headers: this.getAuthHeaders(),
+      });
+
+      return response.ok;
     } catch (error) {
       console.error('Error deleting Mux asset:', error);
       return false;
@@ -90,7 +118,16 @@ export class MuxService {
    */
   static async getUploadStatus(uploadId: string) {
     try {
-      const upload = await mux.video.uploads.retrieve(uploadId);
+      const response = await fetch(`${MUX_API_BASE}/video/v1/uploads/${uploadId}`, {
+        headers: this.getAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const { data: upload } = await response.json();
+
       return {
         id: upload.id,
         status: upload.status || 'unknown',

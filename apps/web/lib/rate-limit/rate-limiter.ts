@@ -1,6 +1,18 @@
-import { Redis } from 'ioredis';
+// Using in-memory rate limiting for development
+// Redis can be added later for production scaling
+console.log('ℹ️ Using in-memory rate limiting (Redis not configured)');
 
-const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+// In-memory fallback for rate limiting when Redis is not available
+const inMemoryStore = new Map<string, { requests: number[]; resetTime: number }>();
+
+function cleanupInMemoryStore() {
+  const now = Date.now();
+  for (const [key, data] of inMemoryStore.entries()) {
+    if (data.resetTime < now) {
+      inMemoryStore.delete(key);
+    }
+  }
+}
 
 export interface RateLimitOptions {
   windowMs: number; // Time window in milliseconds
@@ -38,32 +50,66 @@ export class RateLimiter {
     const now = Date.now();
     const windowStart = now - this.options.windowMs;
 
+    // Use Redis if available, otherwise fallback to in-memory store
+    if (redis) {
+      try {
+        // Use Redis sorted set to track requests within time window
+        // Add current request timestamp
+        await redis.zadd(key, now, now.toString());
+
+        // Remove requests outside the time window
+        await redis.zremrangebyscore(key, 0, windowStart);
+
+        // Count remaining requests in window
+        const requestCount = await redis.zcount(key, windowStart, now);
+
+        // Set expiry on the key (cleanup)
+        await redis.expire(key, Math.ceil(this.options.windowMs / 1000) + 60);
+
+        const remaining = Math.max(0, this.options.maxRequests - requestCount);
+        const allowed = requestCount <= this.options.maxRequests;
+
+        return {
+          allowed,
+          remaining: allowed ? remaining - 1 : remaining,
+          resetTime: now + this.options.windowMs,
+          totalRequests: requestCount,
+        };
+      } catch (error) {
+        console.error('Redis rate limiting error, falling back to in-memory:', error);
+        // Fall through to in-memory implementation
+      }
+    }
+
+    // In-memory fallback implementation
     try {
-      // Use Redis sorted set to track requests within time window
-      // Add current request timestamp
-      await redis.zadd(key, now, now.toString());
+      cleanupInMemoryStore();
 
-      // Remove requests outside the time window
-      await redis.zremrangebyscore(key, 0, windowStart);
+      let data = inMemoryStore.get(key);
+      if (!data || data.resetTime < now) {
+        data = { requests: [], resetTime: now + this.options.windowMs };
+        inMemoryStore.set(key, data);
+      }
 
-      // Count remaining requests in window
-      const requestCount = await redis.zcount(key, windowStart, now);
+      // Remove old requests outside the window
+      data.requests = data.requests.filter(timestamp => timestamp > windowStart);
 
-      // Set expiry on the key (cleanup)
-      await redis.expire(key, Math.ceil(this.options.windowMs / 1000) + 60);
+      // Add current request
+      data.requests.push(now);
 
+      const requestCount = data.requests.length;
       const remaining = Math.max(0, this.options.maxRequests - requestCount);
       const allowed = requestCount <= this.options.maxRequests;
 
       return {
         allowed,
         remaining: allowed ? remaining - 1 : remaining,
-        resetTime: now + this.options.windowMs,
+        resetTime: data.resetTime,
         totalRequests: requestCount,
       };
     } catch (error) {
-      console.error('Rate limiting error:', error);
-      // On Redis error, allow request to prevent blocking legitimate users
+      console.error('Rate limiting fallback error:', error);
+      // On error, allow request to prevent blocking legitimate users
       return {
         allowed: true,
         remaining: this.options.maxRequests - 1,
@@ -176,16 +222,22 @@ function getClientIP(request: Request): string {
  */
 export async function cleanupRateLimitKeys(): Promise<void> {
   try {
-    const keys = await redis.keys('rate-limit:*');
-    console.log(`Found ${keys.length} rate limit keys for cleanup`);
+    if (redis) {
+      // Redis cleanup
+      const keys = await redis.keys('rate-limit:*');
+      console.log(`Found ${keys.length} rate limit keys for cleanup`);
 
-    // Remove keys that haven't been accessed recently
-    // This is a basic cleanup - in production you might want more sophisticated logic
-    for (const key of keys) {
-      const ttl = await redis.ttl(key);
-      if (ttl === -1) { // Key has no expiry
-        await redis.expire(key, 24 * 60 * 60); // Set 24 hour expiry
+      // Remove keys that haven't been accessed recently
+      for (const key of keys) {
+        const ttl = await redis.ttl(key);
+        if (ttl === -1) { // Key has no expiry
+          await redis.expire(key, 24 * 60 * 60); // Set 24 hour expiry
+        }
       }
+    } else {
+      // In-memory cleanup
+      cleanupInMemoryStore();
+      console.log(`In-memory rate limit cleanup completed`);
     }
   } catch (error) {
     console.error('Rate limit cleanup error:', error);
