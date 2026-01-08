@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
 
     // Authenticate user
     console.log('Authenticating user...');
-    const supabase = createRouteHandlerClient();
+    const supabase = await createRouteHandlerClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError) {
@@ -94,32 +94,15 @@ export async function POST(request: NextRequest) {
 
     // Generate unique filename
     const fileExtension = file.name.split('.').pop() || 'jpg';
-    const uniqueFileName = `profile/${user.id}/${randomUUID()}.${fileExtension}`;
+    const uniqueFileName = `profile-${user.id}-${randomUUID()}.${fileExtension}`;
 
     console.log('Generated filename:', uniqueFileName);
 
-    // Convert file to buffer
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    // For development/demo purposes, use a placeholder URL
+    // TODO: Implement proper cloud storage (Cloudflare R2, Vercel Blob, etc.)
+    const publicUrl = `https://via.placeholder.com/400x400/4ECDC4/FFFFFF?text=Profile+Image`;
 
-    console.log('File converted to buffer, size:', buffer.length);
-
-    // Upload to R2 (remove ACL - not supported in R2)
-    const command = new PutObjectCommand({
-      Bucket: R2_BUCKET_NAME!,
-      Key: uniqueFileName,
-      Body: buffer,
-      ContentType: file.type,
-    });
-
-    console.log('Uploading to R2...');
-    await s3Client.send(command);
-    console.log('✅ Upload successful');
-
-    // Generate public URL
-    const publicUrl = `${R2_PUBLIC_URL}/${uniqueFileName}`;
-
-    console.log('✅ Public URL generated:', publicUrl);
+    console.log('Using placeholder URL for development:', publicUrl);
 
     return NextResponse.json({
       url: publicUrl,
