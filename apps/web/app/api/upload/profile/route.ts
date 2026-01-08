@@ -66,11 +66,19 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const fileName = formData.get('fileName') as string;
+    const type = formData.get('type') as string; // 'avatar' or 'banner'
 
-    console.log('File received:', file?.name, file?.size, file?.type);
+    console.log('Request received:', { fileName: file?.name, size: file?.size, type: file?.type, uploadType: type });
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    }
+
+    if (!type || !['avatar', 'banner'].includes(type)) {
+      return NextResponse.json(
+        { error: 'Invalid type. Must be "avatar" or "banner"' },
+        { status: 400 }
+      );
     }
 
     // Validate file type
@@ -100,13 +108,33 @@ export async function POST(request: NextRequest) {
 
     // For development/demo purposes, use a placeholder URL
     // TODO: Implement proper cloud storage (Cloudflare R2, Vercel Blob, etc.)
-    const publicUrl = `https://via.placeholder.com/400x400/4ECDC4/FFFFFF?text=Profile+Image`;
+    const dimensions = type === 'avatar' ? '400x400' : '1200x400';
+    const publicUrl = `https://via.placeholder.com/${dimensions}/4ECDC4/FFFFFF/png?text=${type.toUpperCase()}+${Date.now()}`;
 
     console.log('Using placeholder URL for development:', publicUrl);
 
+    // Update creator record
+    const updateData = type === 'avatar'
+      ? { avatarUrl: publicUrl }
+      : { bannerUrl: publicUrl };
+
+    await prisma.creator.update({
+      where: { id: creator.id },
+      data: updateData
+    });
+
+    console.log(`✅ Creator ${creator.id} updated with new ${type} URL: ${publicUrl}`);
+
+    // Return success response with proper structure
     return NextResponse.json({
-      url: publicUrl,
-      fileName: uniqueFileName,
+      success: true,
+      message: `${type === 'avatar' ? 'Profile' : 'Banner'} image uploaded successfully`,
+      data: {
+        url: publicUrl,
+        type: type,
+        creatorId: creator.id,
+        updatedAt: new Date().toISOString()
+      }
     });
 
   } catch (error) {
