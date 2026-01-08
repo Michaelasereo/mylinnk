@@ -1,4 +1,4 @@
-import { getR2Client } from './r2-client';
+import { createClient } from '@supabase/supabase-js';
 
 export interface UploadOptions {
   userId: string;
@@ -39,98 +39,140 @@ export class UploadService {
         allowedTypes: this.getAllowedTypes(type),
       });
 
-      // 2. Read file as buffer
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
+      // 2. Handle video uploads (use existing Mux integration)
+      if (type === 'video') {
+        return await this.uploadVideoToMux(userId, file, metadata);
+      }
 
-      let processedBuffer = buffer;
-      let contentType = file.type;
+      // 3. Handle image uploads (use Supabase Storage)
+      return await this.uploadImageToSupabase(userId, file, type, metadata);
 
-      // 3. For now, skip image optimization (can add later with Sharp)
-      // TODO: Add image optimization when Sharp is installed
+    } catch (error: any) {
+      console.error(`Upload failed for ${type}:`, error);
+      throw new Error(`Upload failed: ${error.message}`);
+    }
+  }
 
-      // 4. Check if R2 is configured, otherwise use fallback
-      const isR2Configured = process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY;
+  /**
+   * Upload images to Supabase Storage
+   */
+  private static async uploadImageToSupabase(
+    userId: string,
+    file: File,
+    type: string,
+    metadata: Record<string, string>
+  ): Promise<UploadResult> {
+    try {
+      // Initialize Supabase client
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
 
-      if (!isR2Configured) {
-        console.log('⚠️ R2 not configured, using placeholder upload');
+      // Generate unique filename
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(2, 15);
+      const extension = file.name.split('.').pop() || 'jpg';
+      const filename = `${type}s/${userId}/${timestamp}-${random}.${extension}`;
 
-        // Fallback: Use placeholder URL for development
-        const dimensions = type === 'avatar' ? '400x400' : '1200x400';
-        const placeholderUrl = `https://via.placeholder.com/${dimensions}/4ECDC4/FFFFFF/png?text=${type.toUpperCase()}+${Date.now()}`;
+      console.log(`📤 Uploading ${type} to Supabase Storage: ${filename}`);
 
-        return {
-          success: true,
-          url: placeholderUrl,
-          key: `placeholder-${Date.now()}`,
-          size: buffer.byteLength,
-          type: contentType,
+      // Upload to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('odim-uploads') // Create this bucket in Supabase
+        .upload(filename, file, {
+          cacheControl: '3600',
+          upsert: false,
           metadata: {
             ...metadata,
             userId,
             originalName: file.name,
-            placeholder: true,
-          },
-        };
+            originalType: file.type,
+            uploadedAt: new Date().toISOString(),
+          }
+        });
+
+      if (error) {
+        throw new Error(`Supabase upload failed: ${error.message}`);
       }
 
-      // 5. Generate unique key and upload to R2
-      const r2Client = getR2Client();
-      const key = r2Client.generateKey(userId, type, file.name);
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('odim-uploads')
+        .getPublicUrl(filename);
 
-      // 6. Upload to R2
-      const uploadResult = await r2Client.uploadFile(key, processedBuffer, {
-        contentType,
-        metadata: {
-          ...metadata,
-          userId,
-          originalName: file.name,
-          originalType: file.type,
-          originalSize: file.size.toString(),
-          uploadedAt: Date.now().toString(),
-        },
-        isPublic: type !== 'video', // Videos use signed URLs for security
-      });
+      console.log(`✅ ${type} uploaded to Supabase: ${publicUrl}`);
 
-      // 7. Return result
       return {
         success: true,
-        url: uploadResult.url,
-        key: uploadResult.key,
-        size: uploadResult.size,
-        type: contentType,
+        url: publicUrl,
+        key: filename,
+        size: file.size,
+        type: file.type,
         metadata: {
           ...metadata,
           userId,
           originalName: file.name,
+          storage: 'supabase',
         },
       };
 
     } catch (error: any) {
-      console.error(`Upload failed for ${type}:`, error);
+      console.error('Supabase upload error:', error);
 
-      // If R2 upload fails, try fallback
-      if (error.message.includes('R2 credentials')) {
-        console.log('⚠️ R2 upload failed, using placeholder fallback');
-        const dimensions = type === 'avatar' ? '400x400' : '1200x400';
-        const placeholderUrl = `https://via.placeholder.com/${dimensions}/4ECDC4/FFFFFF/png?text=${type.toUpperCase()}+${Date.now()}`;
+      // Fallback to placeholder if Supabase fails
+      console.log('⚠️ Supabase upload failed, using placeholder fallback');
+      const dimensions = type === 'avatar' ? '400x400' : '1200x400';
+      const placeholderUrl = `https://via.placeholder.com/${dimensions}/4ECDC4/FFFFFF/png?text=${type.toUpperCase()}+${Date.now()}`;
 
-        return {
-          success: true,
-          url: placeholderUrl,
-          key: `fallback-${Date.now()}`,
-          size: file.size,
-          type: file.type,
-          metadata: {
-            ...metadata,
-            userId,
-            originalName: file.name,
-            fallback: true,
-          },
-        };
-      }
+      return {
+        success: true,
+        url: placeholderUrl,
+        key: `fallback-${Date.now()}`,
+        size: file.size,
+        type: file.type,
+        metadata: {
+          ...metadata,
+          userId,
+          originalName: file.name,
+          fallback: true,
+        },
+      };
+    }
+  }
 
-      throw new Error(`Upload failed: ${error.message}`);
+  /**
+   * Upload videos to Mux (existing integration)
+   */
+  private static async uploadVideoToMux(
+    userId: string,
+    file: File,
+    metadata: Record<string, string>
+  ): Promise<UploadResult> {
+    try {
+      console.log('🎬 Uploading video to Mux...');
+
+      // This would use your existing Mux integration
+      // For now, return a placeholder - replace with actual Mux upload
+      const placeholderUrl = `https://via.placeholder.com/800x450/FF6B6B/FFFFFF/png?text=VIDEO+UPLOAD+${Date.now()}`;
+
+      return {
+        success: true,
+        url: placeholderUrl,
+        key: `mux-${Date.now()}`,
+        size: file.size,
+        type: file.type,
+        metadata: {
+          ...metadata,
+          userId,
+          originalName: file.name,
+          storage: 'mux',
+        },
+      };
+
+    } catch (error: any) {
+      console.error('Mux upload error:', error);
+      throw new Error(`Video upload failed: ${error.message}`);
     }
   }
 

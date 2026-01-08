@@ -20,7 +20,7 @@ export async function GET() {
     services: {
       database: process.env.DATABASE_URL ? 'configured' : 'missing',
       mux: process.env.MUX_TOKEN_ID ? 'configured' : 'missing',
-      r2: process.env.CLOUDFLARE_R2_BUCKET_NAME ? 'configured' : 'missing'
+      supabaseStorage: (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) ? 'configured' : 'missing'
     }
   });
 }
