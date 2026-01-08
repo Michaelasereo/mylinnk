@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@/lib/supabase/server';
 import { prisma } from '@odim/database';
-import { randomUUID } from 'crypto';
+import { UploadService } from '@/lib/storage/upload-service';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300; // 5 minutes for large files
 
 export async function POST(request: NextRequest) {
   console.log('🎯 Profile upload API called');
@@ -99,36 +100,46 @@ export async function POST(request: NextRequest) {
 
     console.log('Generated filename:', uniqueFileName);
 
-    // For development/demo purposes, use a placeholder URL
-    // TODO: Implement proper cloud storage (Cloudflare R2, Vercel Blob, etc.)
-    const dimensions = type === 'avatar' ? '400x400' : '1200x400';
-    const publicUrl = `https://via.placeholder.com/${dimensions}/4ECDC4/FFFFFF/png?text=${type.toUpperCase()}+${Date.now()}`;
+    console.log(`📁 Uploading ${type}: ${file.name} (${file.size} bytes)`);
 
-    console.log('Using placeholder URL for development:', publicUrl);
+    // Upload to R2 using our service
+    const uploadResult = await UploadService.upload({
+      userId: user.id,
+      file,
+      type,
+      metadata: {
+        creatorId: creator.id,
+        uploadType: type,
+      },
+      optimizeImages: false, // TODO: Enable when Sharp is installed
+      maxSizeMB: type === 'avatar' ? 5 : 20, // 5MB for avatar, 20MB for banner
+    });
 
     // Update creator record
     const updateData = type === 'avatar'
-      ? { avatarUrl: publicUrl }
-      : { bannerUrl: publicUrl };
+      ? { avatarUrl: uploadResult.url }
+      : { bannerUrl: uploadResult.url };
 
     await prisma.creator.update({
       where: { id: creator.id },
       data: updateData
     });
 
-    console.log(`✅ Creator ${creator.id} updated with new ${type} URL: ${publicUrl}`);
+    console.log(`✅ Creator ${creator.id} updated with new ${type} URL: ${uploadResult.url}`);
 
     // Return success response with proper structure
     return NextResponse.json({
       success: true,
       message: `${type === 'avatar' ? 'Profile' : 'Banner'} image uploaded successfully`,
       data: {
-        url: publicUrl,
-        type: type,
+        url: uploadResult.url,
+        key: uploadResult.key,
+        type,
+        size: uploadResult.size,
         creatorId: creator.id,
-        updatedAt: new Date().toISOString()
+        uploadedAt: new Date().toISOString(),
       }
-    });
+    }, { status: 200 });
 
   } catch (error) {
     console.error('❌ Profile image upload error:', error);
