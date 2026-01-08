@@ -21,21 +21,53 @@ const s3Client = new S3Client({
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
+  console.log('🎯 Profile upload API called');
+
   try {
+    // Check environment variables first
+    console.log('Checking R2 config...');
+    console.log('R2_ACCOUNT_ID:', R2_ACCOUNT_ID ? 'SET' : 'MISSING');
+    console.log('R2_ACCESS_KEY_ID:', R2_ACCESS_KEY_ID ? 'SET' : 'MISSING');
+    console.log('R2_SECRET_ACCESS_KEY:', R2_SECRET_ACCESS_KEY ? 'SET' : 'MISSING');
+    console.log('R2_BUCKET_NAME:', R2_BUCKET_NAME ? 'SET' : 'MISSING');
+    console.log('R2_PUBLIC_URL:', R2_PUBLIC_URL ? 'SET' : 'MISSING');
+
+    if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET_NAME || !R2_PUBLIC_URL) {
+      console.error('❌ R2 environment variables not configured');
+      return NextResponse.json(
+        { error: 'Server configuration error: R2 not configured' },
+        { status: 500 }
+      );
+    }
+
     // Authenticate user
+    console.log('Authenticating user...');
     const supabase = createRouteHandlerClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (authError || !user) {
+    if (authError) {
+      console.error('❌ Supabase auth error:', authError);
+      return NextResponse.json(
+        { error: 'Authentication error', details: authError.message },
+        { status: 401 }
+      );
+    }
+
+    if (!user) {
+      console.error('❌ No user found');
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
       );
     }
 
+    console.log('✅ User authenticated:', user.id);
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const fileName = formData.get('fileName') as string;
+
+    console.log('File received:', file?.name, file?.size, file?.type);
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -43,6 +75,7 @@ export async function POST(request: NextRequest) {
 
     // Validate file type
     if (!file.type.startsWith('image/')) {
+      console.error('❌ Invalid file type:', file.type);
       return NextResponse.json(
         { error: 'Only image files are allowed' },
         { status: 400 }
@@ -52,6 +85,7 @@ export async function POST(request: NextRequest) {
     // Validate file size (max 10MB)
     const maxSize = 10 * 1024 * 1024; // 10MB
     if (file.size > maxSize) {
+      console.error('❌ File too large:', file.size);
       return NextResponse.json(
         { error: 'File size must be less than 10MB' },
         { status: 400 }
@@ -62,23 +96,30 @@ export async function POST(request: NextRequest) {
     const fileExtension = file.name.split('.').pop() || 'jpg';
     const uniqueFileName = `profile/${user.id}/${randomUUID()}.${fileExtension}`;
 
+    console.log('Generated filename:', uniqueFileName);
+
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Upload to R2
+    console.log('File converted to buffer, size:', buffer.length);
+
+    // Upload to R2 (remove ACL - not supported in R2)
     const command = new PutObjectCommand({
       Bucket: R2_BUCKET_NAME!,
       Key: uniqueFileName,
       Body: buffer,
       ContentType: file.type,
-      ACL: 'public-read', // Make the file publicly accessible
     });
 
+    console.log('Uploading to R2...');
     await s3Client.send(command);
+    console.log('✅ Upload successful');
 
     // Generate public URL
     const publicUrl = `${R2_PUBLIC_URL}/${uniqueFileName}`;
+
+    console.log('✅ Public URL generated:', publicUrl);
 
     return NextResponse.json({
       url: publicUrl,
@@ -86,9 +127,16 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Profile image upload error:', error);
+    console.error('❌ Profile image upload error:', error);
+    console.error('Error details:', error.message);
+    console.error('Error stack:', error.stack);
+
     return NextResponse.json(
-      { error: 'Failed to upload image' },
+      {
+        error: 'Failed to upload image',
+        details: error.message,
+        timestamp: new Date().toISOString()
+      },
       { status: 500 }
     );
   }
