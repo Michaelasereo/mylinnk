@@ -1,22 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@/lib/supabase/server';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { prisma } from '@odim/database';
 import { randomUUID } from 'crypto';
-
-const R2_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
-const R2_ACCESS_KEY_ID = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
-const R2_SECRET_ACCESS_KEY = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
-const R2_BUCKET_NAME = process.env.CLOUDFLARE_R2_BUCKET_NAME;
-const R2_PUBLIC_URL = process.env.CLOUDFLARE_R2_PUBLIC_URL;
-
-const s3Client = new S3Client({
-  region: 'auto',
-  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  credentials: {
-    accessKeyId: R2_ACCESS_KEY_ID!,
-    secretAccessKey: R2_SECRET_ACCESS_KEY!,
-  },
-});
 
 export const dynamic = 'force-dynamic';
 
@@ -32,13 +17,6 @@ export async function POST(request: NextRequest) {
     console.log('R2_BUCKET_NAME:', R2_BUCKET_NAME ? 'SET' : 'MISSING');
     console.log('R2_PUBLIC_URL:', R2_PUBLIC_URL ? 'SET' : 'MISSING');
 
-    if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET_NAME || !R2_PUBLIC_URL) {
-      console.error('❌ R2 environment variables not configured');
-      return NextResponse.json(
-        { error: 'Server configuration error: R2 not configured' },
-        { status: 500 }
-      );
-    }
 
     // Authenticate user
     console.log('Authenticating user...');
@@ -62,6 +40,21 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('✅ User authenticated:', user.id);
+
+    // Get creator
+    const creator = await prisma.creator.findUnique({
+      where: { userId: user.id }
+    });
+
+    if (!creator) {
+      console.error('❌ Creator not found for user:', user.id);
+      return NextResponse.json(
+        { error: 'Creator not found' },
+        { status: 404 }
+      );
+    }
+
+    console.log('✅ Creator found:', creator.id);
 
     const formData = await request.formData();
     const file = formData.get('file') as File;
