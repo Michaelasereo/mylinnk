@@ -1,4 +1,47 @@
 import { createClient } from '@supabase/supabase-js';
+import sharp from 'sharp';
+
+// Conditional import for file-type with fallback
+let fileTypeFromBuffer: any;
+try {
+  const fileType = require('file-type');
+  fileTypeFromBuffer = fileType.fileTypeFromBuffer;
+} catch (e) {
+  console.warn('file-type not available, using fallback validation');
+
+  // Emergency fallback for file-type validation
+  fileTypeFromBuffer = async (buffer: Buffer): Promise<{ ext: string; mime: string } | undefined> => {
+    const header = buffer.slice(0, 12);
+
+    // PNG
+    if (header.slice(0, 8).toString() === '\x89PNG\r\n\x1a\n') {
+      return { ext: 'png', mime: 'image/png' };
+    }
+
+    // JPEG
+    if (header.slice(0, 2).toString() === '\xff\xd8') {
+      return { ext: 'jpg', mime: 'image/jpeg' };
+    }
+
+    // GIF
+    if (header.slice(0, 6).toString() === 'GIF87a' || header.slice(0, 6).toString() === 'GIF89a') {
+      return { ext: 'gif', mime: 'image/gif' };
+    }
+
+    // WebP
+    if (header.slice(0, 4).toString() === 'RIFF' &&
+        header.slice(8, 12).toString() === 'WEBP') {
+      return { ext: 'webp', mime: 'image/webp' };
+    }
+
+    // MP4
+    if (header.slice(4, 8).toString() === 'ftyp') {
+      return { ext: 'mp4', mime: 'video/mp4' };
+    }
+
+    return undefined;
+  };
+}
 
 export interface UploadOptions {
   userId: string;
@@ -54,7 +97,7 @@ export class UploadService {
   }
 
   /**
-   * Upload images to Supabase Storage
+   * Upload images to Supabase Storage with optimization
    */
   private static async uploadImageToSupabase(
     userId: string,
@@ -62,118 +105,116 @@ export class UploadService {
     type: string,
     metadata: Record<string, string>
   ): Promise<UploadResult> {
-    try {
-      // Initialize Supabase client
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
-
-      // Generate unique filename
-      const timestamp = Date.now();
-      const random = Math.random().toString(36).substring(2, 15);
-      const extension = file.name.split('.').pop() || 'jpg';
-      const filename = `${type}s/${userId}/${timestamp}-${random}.${extension}`;
-
-      console.log(`📤 Uploading ${type} to Supabase Storage: ${filename}`);
-
-      // Upload to Supabase Storage
-      const { data, error } = await supabase.storage
-        .from('odim-uploads') // Create this bucket in Supabase
-        .upload(filename, file, {
-          cacheControl: '3600',
-          upsert: false,
-          metadata: {
-            ...metadata,
-            userId,
-            originalName: file.name,
-            originalType: file.type,
-            uploadedAt: new Date().toISOString(),
-          }
-        });
-
-      if (error) {
-        throw new Error(`Supabase upload failed: ${error.message}`);
+    // Initialize Supabase client with service role key (bypasses RLS)
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!, // ⚠️ Service role key bypasses RLS policies
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
       }
+    );
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('odim-uploads')
-        .getPublicUrl(filename);
+    // 1. Read file as buffer
+    const arrayBuffer = await file.arrayBuffer();
+    let buffer = Buffer.from(arrayBuffer);
+    let contentType = file.type;
+    let optimized = false;
 
-      console.log(`✅ ${type} uploaded to Supabase: ${publicUrl}`);
+    // 2. Optimize image if it's an image file
+    if (file.type.startsWith('image/')) {
+      try {
+        const maxWidth = type === 'avatar' ? 400 : 1920;
+        const maxHeight = type === 'avatar' ? 400 : 1080;
 
-      return {
-        success: true,
-        url: publicUrl,
-        key: filename,
-        size: file.size,
-        type: file.type,
-        metadata: {
-          ...metadata,
-          userId,
-          originalName: file.name,
-          storage: 'supabase',
-        },
-      };
+        buffer = await sharp(buffer)
+          .resize(maxWidth, maxHeight, {
+            fit: 'inside',
+            withoutEnlargement: true,
+          })
+          .webp({ quality: 85 })
+          .toBuffer();
 
-    } catch (error: any) {
-      console.error('Supabase upload error:', error);
+        contentType = 'image/webp';
+        optimized = true;
 
-      // Fallback to placeholder if Supabase fails
-      console.log('⚠️ Supabase upload failed, using placeholder fallback');
-      const dimensions = type === 'avatar' ? '400x400' : '1200x400';
-      const placeholderUrl = `https://via.placeholder.com/${dimensions}/4ECDC4/FFFFFF/png?text=${type.toUpperCase()}+${Date.now()}`;
-
-      return {
-        success: true,
-        url: placeholderUrl,
-        key: `fallback-${Date.now()}`,
-        size: file.size,
-        type: file.type,
-        metadata: {
-          ...metadata,
-          userId,
-          originalName: file.name,
-          fallback: true,
-        },
-      };
+        console.log(`🖼️ Optimized ${type}: ${file.size} → ${buffer.length} bytes`);
+      } catch (sharpError) {
+        console.warn(`⚠️ Sharp optimization failed for ${type}, using original:`, sharpError);
+        // Continue with original file
+      }
     }
+
+    // 3. Generate unique filename
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 15);
+    const extension = optimized ? 'webp' : (file.name.split('.').pop() || 'jpg');
+    const filename = `${type}s/${userId}/${timestamp}-${random}.${extension}`;
+
+    console.log(`📤 Uploading ${type} to Supabase Storage: ${filename}`);
+
+    // 4. Upload to Supabase Storage
+    const { data, error } = await supabase.storage
+      .from('crealio')
+      .upload(filename, buffer, {
+        contentType,
+        cacheControl: '3600',
+        upsert: false,
+        metadata: {
+          ...metadata,
+          userId,
+          originalName: file.name,
+          originalType: file.type,
+          originalSize: file.size.toString(),
+          optimized: optimized.toString(),
+          uploadedAt: new Date().toISOString(),
+        }
+      });
+
+    if (error) {
+      console.error('❌ Supabase upload failed:', error);
+      throw new Error(`Supabase upload failed: ${error.message}`);
+    }
+
+    // 5. Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('crealio')
+      .getPublicUrl(filename);
+
+    console.log(`✅ ${type} uploaded to Supabase: ${publicUrl}`);
+
+    return {
+      success: true,
+      url: publicUrl,
+      key: filename,
+      size: buffer.byteLength,
+      type: contentType,
+      metadata: {
+        ...metadata,
+        userId,
+        originalName: file.name,
+        storage: 'supabase',
+        optimized,
+        originalSize: file.size,
+        optimizedSize: buffer.byteLength,
+      },
+    };
   }
 
   /**
-   * Upload videos to Mux (existing integration)
+   * Upload videos to Mux (redirect to dedicated endpoint)
    */
   private static async uploadVideoToMux(
     userId: string,
     file: File,
     metadata: Record<string, string>
   ): Promise<UploadResult> {
-    try {
-      console.log('🎬 Uploading video to Mux...');
+    console.log('🎬 Video upload to Mux - redirecting to /api/upload/stream');
 
-      // This would use your existing Mux integration
-      // For now, return a placeholder - replace with actual Mux upload
-      const placeholderUrl = `https://via.placeholder.com/800x450/FF6B6B/FFFFFF/png?text=VIDEO+UPLOAD+${Date.now()}`;
-
-      return {
-        success: true,
-        url: placeholderUrl,
-        key: `mux-${Date.now()}`,
-        size: file.size,
-        type: file.type,
-        metadata: {
-          ...metadata,
-          userId,
-          originalName: file.name,
-          storage: 'mux',
-        },
-      };
-
-    } catch (error: any) {
-      console.error('Mux upload error:', error);
-      throw new Error(`Video upload failed: ${error.message}`);
-    }
+    // Videos should use the dedicated stream endpoint with UploadManager
+    throw new Error('Video uploads must use /api/upload/stream endpoint with UploadManager.');
   }
 
   /**

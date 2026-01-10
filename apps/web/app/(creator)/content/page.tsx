@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { prisma } from '@odim/database';
+import { serializeForClient } from '@/lib/utils';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { ContentList } from '@/components/creator/ContentList';
@@ -98,7 +99,10 @@ export default async function ContentPage() {
           <TabsTrigger value="intro-video">Intro Video</TabsTrigger>
         </TabsList>
         <TabsContent value="content" className="mt-6">
-          <ContentList content={content} creator={creator} />
+          <ContentList
+            content={content}
+            creator={serializeForClient(creator)}
+          />
         </TabsContent>
         <TabsContent value="collections" className="mt-6">
           <CollectionsTab collections={collections} />

@@ -15,7 +15,7 @@ Your Odim platform now uses:
 2. Select your project
 3. Go to **Storage** in the sidebar
 4. Click **Create bucket**
-5. Bucket name: `odim-uploads`
+5. Bucket name: `crealio`
 6. Make it **Public** (so images can be viewed)
 7. Click **Create bucket**
 
@@ -23,23 +23,23 @@ Your Odim platform now uses:
 
 In the bucket settings:
 1. Go to **Policies** tab
-2. Add these policies:
+2. Add these policies one by one:
 
-**For uploads (INSERT):**
+**Policy 1 - Allow authenticated users to upload files:**
 ```sql
--- Allow authenticated users to upload files
-bucket_id = 'odim-uploads'
+bucket_id = 'crealio'
 AND auth.role() = 'authenticated'
 ```
 
-**For public access (SELECT):**
+**Policy 2 - Allow public read access to images:**
 ```sql
--- Allow public read access to all files
-bucket_id = 'odim-uploads'
+bucket_id = 'crealio'
 AND (storage.foldername(name))[1] = 'avatars'
 OR (storage.foldername(name))[1] = 'banners'
 OR (storage.foldername(name))[1] = 'images'
 ```
+
+**IMPORTANT:** Copy and paste ONLY the SQL code between the ```sql markers, not the markdown formatting!
 
 ### Step 3: Environment Variables
 
@@ -60,7 +60,7 @@ MUX_TOKEN_SECRET=your_mux_token_secret
 Supabase Storage will organize files like this:
 
 ```
-odim-uploads/
+crealio/
 ├── avatars/
 │   ├── user123/
 │   │   ├── 1705123456789-abc123.jpg

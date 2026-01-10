@@ -29,7 +29,7 @@ export class UploadManager {
           filename: file.name,
           mimeType: file.type,
           size: file.size,
-          status: 'uploading',
+          status: 'UPLOADING', // ✅ FIXED: Use correct enum value
           metadata: {
             originalName: file.name,
             size: file.size,
@@ -45,7 +45,7 @@ export class UploadManager {
       await prisma.upload.update({
         where: { id: uploadId },
         data: {
-          status: 'completed',
+          status: 'COMPLETED', // ✅ FIXED: Use correct enum value
           muxAssetId: muxResult.assetId,
           muxPlaybackId: muxResult.playbackId,
           url: muxResult.playbackUrl,
@@ -59,14 +59,20 @@ export class UploadManager {
           title: file.name.replace(/\.[^/.]+$/, ""), // Remove extension
           description: '',
           type: 'video',
-          price: 0,
           creatorId,
           uploadId,
+          muxAssetId: muxResult.assetId,
+          muxPlaybackId: muxResult.playbackId,
+          fileSizeBytes: BigInt(file.size),
           isPublished: false,
+          accessType: 'subscription',
+          contentCategory: 'content',
           metadata: {
             duration: muxResult.duration,
             aspectRatio: muxResult.aspectRatio,
-            resolution: muxResult.resolution
+            resolution: muxResult.resolution,
+            originalName: file.name,
+            mimeType: file.type
           }
         }
       });
@@ -86,7 +92,7 @@ export class UploadManager {
       await prisma.upload.update({
         where: { id: uploadId },
         data: {
-          status: 'failed',
+          status: 'FAILED', // ✅ FIXED: Use correct enum value
           error: error instanceof Error ? error.message : 'Unknown error',
           failedAt: new Date()
         }

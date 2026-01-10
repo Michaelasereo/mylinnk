@@ -76,26 +76,54 @@ export function SettingsForm({ creator, publicUrl }: SettingsFormProps) {
     },
   });
 
-  async function uploadImage(file: File): Promise<string | null> {
+  async function uploadImage(file: File, type: 'avatar' | 'banner'): Promise<string | null> {
     try {
+      console.log(`🔍 DEBUG: Starting ${type} upload`);
+      console.log('File:', file.name, file.type, file.size, 'bytes');
+
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('fileName', file.name);
+      formData.append('type', type); // ✅ FIXED: Add missing type parameter
+
+      console.log('FormData contents:');
+      for (let [key, value] of formData.entries()) {
+        console.log(`  ${key}:`, value instanceof File ? `File(${value.name}, ${value.type}, ${value.size} bytes)` : value);
+      }
 
       const response = await fetch('/api/upload/profile', {
         method: 'POST',
         body: formData,
       });
 
+      console.log(`📊 Response status: ${response.status}`);
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Upload failed');
+        let errorMessage = 'Upload failed';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.details || errorMessage;
+          console.error('📋 API Error details:', errorData);
+        } catch {
+          const errorText = await response.text();
+          errorMessage = errorText || errorMessage;
+          console.error('📋 Raw error:', errorText);
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
-      return data.url;
-    } catch (error) {
-      console.error('Upload error:', error);
+      console.log('✅ Upload successful:', data);
+
+      const imageUrl = data.data?.url;
+      if (imageUrl) {
+        console.log('🔗 Returned URL:', imageUrl);
+        return imageUrl;
+      } else {
+        throw new Error('No URL returned from upload');
+      }
+
+    } catch (error: any) {
+      console.error(`❌ Upload error for ${type}:`, error);
       toast({
         title: 'Upload failed',
         description: error.message || 'Failed to upload image. Please try again.',
@@ -130,7 +158,7 @@ export function SettingsForm({ creator, publicUrl }: SettingsFormProps) {
     }
 
     setIsUploadingAvatar(true);
-    const url = await uploadImage(file);
+    const url = await uploadImage(file, 'avatar'); // ✅ FIXED: Pass type parameter
     if (url) {
       setAvatarUrl(url);
       form.setValue('avatarUrl', url);
@@ -163,7 +191,7 @@ export function SettingsForm({ creator, publicUrl }: SettingsFormProps) {
     }
 
     setIsUploadingBanner(true);
-    const url = await uploadImage(file);
+    const url = await uploadImage(file, 'banner'); // ✅ FIXED: Pass type parameter
     if (url) {
       setBannerUrl(url);
       form.setValue('bannerUrl', url);

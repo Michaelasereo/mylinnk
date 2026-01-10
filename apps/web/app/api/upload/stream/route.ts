@@ -2,21 +2,47 @@ import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@/lib/supabase/server';
 import { prisma } from '@odim/database';
 
+// BigInt JSON serialization patch - fixes "Cannot serialize BigInt" errors
+(BigInt.prototype as any).toJSON = function() {
+  return this.toString();
+};
+
+// Also patch NextResponse.json to handle BigInt
+const originalNextResponseJson = NextResponse.json;
+(NextResponse as any).json = function(data: any, options?: any) {
+  const safeData = JSON.parse(JSON.stringify(data, (key: string, value: any) => {
+    if (typeof value === 'bigint') {
+      return value.toString();
+    }
+    return value;
+  }));
+  return originalNextResponseJson.call(this, safeData, options);
+};
+
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 minutes for large uploads
 
 export async function POST(request: Request) {
-  console.log('📤 Upload API called');
+  console.log('📤 SERVER DEBUG: Upload API called at', new Date().toISOString());
+  console.log('📤 SERVER DEBUG: Request method:', request.method);
+  console.log('📤 SERVER DEBUG: Content-Type:', request.headers.get('content-type'));
+  console.log('📤 SERVER DEBUG: Content-Length:', request.headers.get('content-length'));
+  console.log('📤 SERVER DEBUG: User-Agent:', request.headers.get('user-agent'));
+
+  let uploadId: string | undefined;
 
   try {
     // 1. Initialize Supabase client
+    console.log('🔧 SERVER DEBUG: Step 1 - Initializing Supabase client');
     const supabase = await createRouteHandlerClient();
 
     // 2. Authenticate user
+    console.log('🔐 SERVER DEBUG: Step 2 - Authenticating user');
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError) {
-      console.error('❌ Auth error:', authError);
+      console.error('❌ SERVER DEBUG: Auth error:', authError);
+      console.error('❌ SERVER DEBUG: Auth error details:', authError.message);
       return NextResponse.json(
         { error: 'Authentication failed', details: authError.message },
         { status: 401 }
@@ -24,14 +50,14 @@ export async function POST(request: Request) {
     }
 
     if (!user) {
-      console.error('❌ No user found');
+      console.error('❌ SERVER DEBUG: No user found in session');
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
       );
     }
 
-    console.log(`✅ User authenticated: ${user.id} (${user.email})`);
+    console.log(`✅ SERVER DEBUG: User authenticated: ${user.id} (${user.email})`);
 
     // 3. Get or create creator
     let creator = await prisma.creator.findUnique({
@@ -56,23 +82,33 @@ export async function POST(request: Request) {
       });
     }
 
-    console.log(`✅ Creator: ${creator.id}`);
+    console.log(`✅ SERVER DEBUG: Creator found: ${creator.id} (${creator.username})`);
 
     // 4. Parse form data
+    console.log('📦 SERVER DEBUG: Step 4 - Parsing form data');
     const formData = await request.formData();
+    console.log('📦 SERVER DEBUG: FormData keys:', Array.from(formData.keys()));
+
     const file = formData.get('file') as File;
 
     if (!file) {
+      console.error('❌ SERVER DEBUG: No file provided in form data');
       return NextResponse.json(
         { error: 'No file provided' },
         { status: 400 }
       );
     }
 
-    console.log(`📁 File: ${file.name} (${file.size} bytes, ${file.type})`);
+    console.log(`📁 SERVER DEBUG: File received: ${file.name} (${file.size} bytes, ${file.type})`);
+    console.log(`📁 SERVER DEBUG: File size: ${(file.size / (1024 * 1024)).toFixed(2)}MB`);
+    console.log(`📁 SERVER DEBUG: File last modified: ${new Date(file.lastModified).toISOString()}`);
 
     // 5. Basic validation
+    console.log('🔍 SERVER DEBUG: Step 5 - File validation');
+    console.log('🔍 SERVER DEBUG: Checking file size...');
+
     if (file.size === 0) {
+      console.error('❌ SERVER DEBUG: File is empty!');
       return NextResponse.json(
         { error: 'File is empty' },
         { status: 400 }
@@ -80,6 +116,7 @@ export async function POST(request: Request) {
     }
 
     if (file.size > 100 * 1024 * 1024) { // 100MB limit
+      console.error(`❌ SERVER DEBUG: File too large: ${(file.size / (1024 * 1024)).toFixed(2)}MB (max: 100MB)`);
       return NextResponse.json(
         { error: 'File too large. Maximum size: 100MB' },
         { status: 400 }
@@ -87,68 +124,102 @@ export async function POST(request: Request) {
     }
 
     // Check file type
+    console.log('🔍 SERVER DEBUG: Checking file type...');
     const allowedTypes = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska'];
+    console.log('🔍 SERVER DEBUG: File type:', file.type);
+    console.log('🔍 SERVER DEBUG: Allowed types:', allowedTypes);
+
     if (!allowedTypes.includes(file.type)) {
+      console.error(`❌ SERVER DEBUG: Unsupported file type: ${file.type}`);
+      console.error('❌ SERVER DEBUG: Allowed types:', allowedTypes);
       return NextResponse.json(
         { error: `Unsupported file type: ${file.type}. Allowed: MP4, WebM, MOV, MKV` },
         { status: 400 }
       );
     }
 
+    console.log('✅ SERVER DEBUG: File validation passed');
+
     // 6. Create upload record
+    console.log('🗄️ SERVER DEBUG: Step 6 - Creating upload record');
     const uploadId = `upl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    console.log('🗄️ SERVER DEBUG: Generated upload ID:', uploadId);
 
-    await prisma.upload.create({
-      data: {
-        id: uploadId,
-        userId: user.id,
-        creatorId: creator.id,
-        filename: file.name,
-        mimeType: file.type,
-        size: file.size,
-        status: 'UPLOADING', // ← FIXED: Use correct enum value (UPLOADING, not 'uploading')
-        metadata: {
-          originalName: file.name,
+    try {
+      await prisma.upload.create({
+        data: {
+          id: uploadId,
+          userId: user.id,
+          creatorId: creator.id,
+          filename: file.name,
+          mimeType: file.type,
           size: file.size,
-          type: file.type
+          status: 'UPLOADING', // ← FIXED: Use correct enum value (UPLOADING, not 'uploading')
+          metadata: {
+            originalName: file.name,
+            size: file.size,
+            type: file.type
+          }
         }
-      }
-    });
-
-    console.log(`✅ Upload record created: ${uploadId}`);
+      });
+      console.log(`✅ SERVER DEBUG: Upload record created successfully: ${uploadId}`);
+    } catch (dbError) {
+      console.error('❌ SERVER DEBUG: Failed to create upload record:', dbError);
+      throw new Error('Database error: Failed to create upload record');
+    }
 
     // 7. Simple Mux upload (direct, no queue for now)
+    console.log('🎬 SERVER DEBUG: Step 7 - Mux upload setup');
+    console.log('🎬 SERVER DEBUG: Checking Mux credentials...');
+    console.log('🎬 SERVER DEBUG: MUX_TOKEN_ID exists:', !!process.env.MUX_TOKEN_ID);
+    console.log('🎬 SERVER DEBUG: MUX_TOKEN_SECRET exists:', !!process.env.MUX_TOKEN_SECRET);
+
     const muxToken = Buffer.from(
       `${process.env.MUX_TOKEN_ID}:${process.env.MUX_TOKEN_SECRET}`
     ).toString('base64');
 
+    console.log('🎬 SERVER DEBUG: Mux token generated (first 10 chars):', muxToken.substring(0, 10) + '...');
+
     // Create Mux direct upload URL
+    console.log('🎬 SERVER DEBUG: Creating Mux upload URL...');
+    const muxRequestBody = {
+      cors_origin: '*',
+      new_asset_settings: {
+        playback_policy: ['public'],
+        mp4_support: 'standard',
+        encoding_tier: 'smart'
+      }
+    };
+    console.log('🎬 SERVER DEBUG: Mux request body:', JSON.stringify(muxRequestBody, null, 2));
+
     const muxResponse = await fetch('https://api.mux.com/video/v1/uploads', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Basic ${muxToken}`
       },
-      body: JSON.stringify({
-        cors_origin: '*',
-        new_asset_settings: {
-          playback_policy: ['public'],
-          mp4_support: 'standard',
-          encoding_tier: 'smart'
-        }
-      })
+      body: JSON.stringify(muxRequestBody)
     });
+
+    console.log('🎬 SERVER DEBUG: Mux API response status:', muxResponse.status, muxResponse.statusText);
+    console.log('🎬 SERVER DEBUG: Mux API response headers:', Object.fromEntries(muxResponse.headers.entries()));
 
     if (!muxResponse.ok) {
       const errorText = await muxResponse.text();
-      console.error('❌ Mux API error:', errorText);
+      console.error('❌ SERVER DEBUG: Mux API error:', {
+        status: muxResponse.status,
+        statusText: muxResponse.statusText,
+        error: errorText,
+        headers: Object.fromEntries(muxResponse.headers.entries())
+      });
 
       // Update upload status to failed
+      console.log('❌ SERVER DEBUG: Updating upload status to FAILED');
       await prisma.upload.update({
         where: { id: uploadId },
         data: {
-          status: 'FAILED', // ← FIXED: Use correct enum value (FAILED, not 'failed')
-          error: `Mux API error: ${muxResponse.status}`,
+          status: 'FAILED',
+          error: `Mux API error: ${muxResponse.status} - ${errorText}`,
           failedAt: new Date()
         }
       });
@@ -156,17 +227,32 @@ export async function POST(request: Request) {
       throw new Error(`Mux API error: ${muxResponse.status} - ${errorText}`);
     }
 
+    console.log('✅ SERVER DEBUG: Mux API call successful');
     const muxData = await muxResponse.json();
+    console.log('🎬 SERVER DEBUG: Mux response data:', JSON.stringify(muxData, null, 2));
+
     const uploadUrl = muxData.data.url;
     const muxUploadId = muxData.data.id;
-    const assetId = muxData.data.asset_id;
-    const playbackId = muxData.data.playback_ids?.[0]?.id;
 
-    console.log(`✅ Mux upload created: ${muxUploadId}`);
-    console.log(`📤 Uploading to: ${uploadUrl}`);
+    // IMPORTANT: asset_id and playback_ids are NOT available immediately!
+    // They become available after video processing is complete (async)
+    const assetId = null; // Will be set when processing completes
+    const playbackId = null; // Will be set when processing completes
+
+    console.log(`✅ SERVER DEBUG: Mux upload created: ${muxUploadId}`);
+    console.log(`📤 SERVER DEBUG: Upload URL: ${uploadUrl}`);
+    console.log(`🎬 SERVER DEBUG: Asset ID: ${assetId} (null until processing complete)`);
+    console.log(`🎬 SERVER DEBUG: Playback ID: ${playbackId} (null until processing complete)`);
 
     // 8. Upload file to Mux
+    console.log('📤 SERVER DEBUG: Step 8 - Uploading file to Mux');
+    console.log('📤 SERVER DEBUG: Converting file to buffer...');
     const fileBuffer = await file.arrayBuffer();
+    console.log('📤 SERVER DEBUG: File buffer size:', fileBuffer.byteLength, 'bytes');
+
+    console.log('📤 SERVER DEBUG: Starting file upload to Mux...');
+    const uploadStart = Date.now();
+
     const uploadResult = await fetch(uploadUrl, {
       method: 'PUT',
       body: fileBuffer,
@@ -175,65 +261,172 @@ export async function POST(request: Request) {
       }
     });
 
+    const uploadTime = Date.now() - uploadStart;
+    console.log('⏱️ SERVER DEBUG: File upload completed in', uploadTime + 'ms');
+    console.log('📤 SERVER DEBUG: Upload result status:', uploadResult.status, uploadResult.statusText);
+
     if (!uploadResult.ok) {
-      throw new Error(`File upload failed: ${uploadResult.status}`);
+      const uploadErrorText = await uploadResult.text();
+      console.error('❌ SERVER DEBUG: File upload to Mux failed:', uploadErrorText);
+      throw new Error(`File upload failed: ${uploadResult.status} - ${uploadErrorText}`);
     }
 
-    console.log('✅ File uploaded to Mux');
+    console.log('✅ SERVER DEBUG: File uploaded to Mux successfully');
 
     // 9. Update database with success
-    await prisma.upload.update({
-      where: { id: uploadId },
-      data: {
-        status: 'COMPLETED', // ← FIXED: Use correct enum value (COMPLETED, not 'completed')
-        muxAssetId: assetId,
-        muxPlaybackId: playbackId,
-        url: `https://stream.mux.com/${playbackId}.m3u8`,
-        completedAt: new Date()
-      }
-    });
+    console.log('🗄️ SERVER DEBUG: Step 9 - Updating database with success');
+    console.log('🗄️ SERVER DEBUG: Updating upload record...');
+
+    try {
+      await prisma.upload.update({
+        where: { id: uploadId },
+        data: {
+          status: 'COMPLETED', // ← FIXED: Use correct enum value (COMPLETED, not 'completed')
+          muxAssetId: assetId,
+          muxPlaybackId: playbackId,
+          url: `https://stream.mux.com/${playbackId}.m3u8`,
+          completedAt: new Date()
+        }
+      });
+      console.log('✅ SERVER DEBUG: Upload record updated successfully');
+    } catch (updateError) {
+      console.error('❌ SERVER DEBUG: Failed to update upload record:', updateError);
+      throw new Error('Database error: Failed to update upload status');
+    }
 
     // 10. Create content record
-    const content = await prisma.content.create({
-      data: {
-        title: file.name.replace(/\.[^/.]+$/, ""), // Remove extension
-        description: '',
-        type: 'video',
-        // NO price field - it doesn't exist in your Prisma schema!
-        creatorId: creator.id,
-        uploadId: uploadId,
-        isPublished: false,
-        metadata: {
-          duration: 0, // Will be updated when Mux processes it
-          aspectRatio: '16:9',
-          resolution: '1920x1080'
-        }
-      }
-    });
+    console.log('📝 SERVER DEBUG: Step 10 - Creating content record');
 
-    console.log(`✅ Content created: ${content.id}`);
+    // DEBUG: Log all the data we're about to send
+    console.log('🎯 DEBUG - Content creation data:');
+    console.log('- creatorId:', creator.id, '(type:', typeof creator.id, ')');
+    console.log('- creatorId as string:', creator.id.toString());
+    console.log('- title:', file.name.replace(/\.[^/.]+$/, ""));
+    console.log('- uploadId:', uploadId);
+    console.log('- muxAssetId:', assetId);
+    console.log('- muxPlaybackId:', playbackId);
+    console.log('- fileSizeBytes:', BigInt(file.size.toString()), '(type:', typeof BigInt(file.size.toString()), ')');
+
+    const contentData = {
+      title: file.name.replace(/\.[^/.]+$/, ""), // Remove extension
+      description: '',
+      type: 'video', // Schema field is 'type'
+      creatorId: creator.id.toString(), // Schema expects 'creatorId' as String
+      uploadId: uploadId, // Schema field is 'uploadId'
+      muxAssetId: assetId, // Schema field is 'muxAssetId'
+      muxPlaybackId: playbackId, // Schema field is 'muxPlaybackId'
+      fileSizeBytes: BigInt(file.size.toString()), // Schema field is 'fileSizeBytes'
+      isPublished: false, // Schema field is 'isPublished'
+      accessType: 'subscription', // Schema field is 'accessType'
+      contentCategory: 'content' // Schema field is 'contentCategory'
+    };
+
+    console.log('📝 SERVER DEBUG: Final content data to create:', JSON.stringify(contentData, (key, value) =>
+      typeof value === 'bigint' ? value.toString() : value, 2
+    ));
+
+    // DECLARE CONTENT VARIABLE OUTSIDE TRY BLOCK
+    let createdContent = null;
+
+    try {
+      createdContent = await prisma.content.create({
+        data: contentData
+      });
+      console.log(`✅ SERVER DEBUG: Content created successfully: ${createdContent.id}`);
+    } catch (contentError) {
+      console.error('❌ SERVER DEBUG: CONTENT CREATION FAILED!');
+      console.error('❌ SERVER DEBUG: Error code:', contentError.code);
+      console.error('❌ SERVER DEBUG: Error message:', contentError.message);
+      console.error('❌ SERVER DEBUG: Error meta:', contentError.meta);
+      console.error('❌ SERVER DEBUG: Error stack:', contentError.stack);
+
+      // Specific error handling
+      if (contentError.code === 'P2002') {
+        console.error('🔄 Unique constraint violation on:', contentError.meta?.target);
+        throw new Error(`Content creation failed: ${contentError.meta?.target} already exists`);
+      }
+      if (contentError.code === 'P2003') {
+        console.error('🔗 Foreign key constraint failed on:', contentError.meta?.field_name);
+        throw new Error(`Content creation failed: Invalid ${contentError.meta?.field_name}`);
+      }
+
+      throw new Error(`Database error: Failed to create content record - ${contentError.message}`);
+    }
 
     // 11. Return success
-    return NextResponse.json({
+    console.log('🎉 SERVER DEBUG: Step 11 - Upload process completed successfully');
+
+    // Video uploaded but processing - provide polling endpoint
+    const successResponse = {
       success: true,
-      message: 'Upload successful',
+      message: 'Video uploaded successfully and processing',
       data: {
         uploadId,
-        contentId: content.id,
-        playbackUrl: `https://stream.mux.com/${playbackId}.m3u8`,
-        assetId,
-        playbackId
+        contentId: createdContent.id.toString(),
+        muxUploadId,
+        // Video is processing - these will be null until processing completes
+        assetId: null,
+        playbackId: null,
+        playbackUrl: null,
+        // Processing status
+        status: 'processing',
+        // Frontend can poll this endpoint for status updates
+        statusEndpoint: `/api/upload/status/${muxUploadId}`,
+        // Estimated processing time
+        estimatedReadyTime: Date.now() + (2 * 60 * 1000), // 2 minutes estimate
+        message: 'Your video is being processed. This usually takes 1-3 minutes.'
       }
-    });
+    };
+
+    console.log('✅ SERVER DEBUG: Returning success response:', JSON.stringify(successResponse, null, 2));
+    return NextResponse.json(successResponse);
 
   } catch (error: any) {
-    console.error('❌ Upload API error:', error);
+    console.error('❌ SERVER DEBUG: Upload API error occurred');
+    console.error('❌ SERVER DEBUG: Error message:', error.message);
+    console.error('❌ SERVER DEBUG: Error stack:', error.stack);
+    console.error('❌ SERVER DEBUG: Error type:', error.constructor.name);
+
+    // Try to update upload status to failed if we have an uploadId
+    if (typeof uploadId !== 'undefined') {
+      try {
+        console.log('❌ SERVER DEBUG: Attempting to mark upload as failed');
+        await prisma.upload.update({
+          where: { id: uploadId },
+          data: {
+            status: 'FAILED',
+            error: error.message,
+            failedAt: new Date()
+          }
+        });
+        console.log('✅ SERVER DEBUG: Upload marked as failed in database');
+      } catch (dbError) {
+        console.error('❌ SERVER DEBUG: Failed to update upload status:', dbError);
+      }
+    }
+
+    // Clean up created content if it exists
+    if (createdContent) {
+      try {
+        console.log('🧹 SERVER DEBUG: Cleaning up created content:', createdContent.id.toString());
+        await prisma.content.delete({
+          where: { id: createdContent.id }
+        });
+        console.log('✅ SERVER DEBUG: Content cleanup successful');
+      } catch (cleanupError) {
+        console.error('❌ SERVER DEBUG: Content cleanup failed:', cleanupError);
+      }
+    }
 
     return NextResponse.json(
       {
         error: 'Upload failed',
         details: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        debug: process.env.NODE_ENV === 'development' ? {
+          stack: error.stack,
+          type: error.constructor.name,
+          uploadId: uploadId || 'not-created'
+        } : undefined
       },
       { status: 500 }
     );

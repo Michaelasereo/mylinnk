@@ -6,8 +6,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const resolvedParams = await params;
   try {
     const supabase = await createRouteHandlerClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -21,7 +22,7 @@ export async function GET(
 
     // Get content with creator check
     const content = await prisma.content.findUnique({
-      where: { id: params.id },
+      where: { id: resolvedParams.id },
       include: {
         creator: {
           select: { id: true, userId: true }
@@ -79,8 +80,9 @@ export async function GET(
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const resolvedParams = await params;
   try {
     const supabase = await createRouteHandlerClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -94,7 +96,7 @@ export async function PUT(
 
     // Get content with creator check
     const existingContent = await prisma.content.findUnique({
-      where: { id: params.id },
+      where: { id: resolvedParams.id },
       include: {
         creator: {
           select: { id: true, userId: true }
@@ -141,7 +143,7 @@ export async function PUT(
 
     // Update content
     const updatedContent = await prisma.content.update({
-      where: { id: params.id },
+      where: { id: resolvedParams.id },
       data: {
         title: title.trim(),
         description: description?.trim(),
@@ -194,8 +196,9 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const resolvedParams = await params;
   try {
     const supabase = await createRouteHandlerClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -209,7 +212,7 @@ export async function DELETE(
 
     // Get content with creator check
     const content = await prisma.content.findUnique({
-      where: { id: params.id },
+      where: { id: resolvedParams.id },
       include: {
         creator: {
           select: { id: true, userId: true }
@@ -234,7 +237,7 @@ export async function DELETE(
 
     // Delete content (cascade will handle related records)
     await prisma.content.delete({
-      where: { id: params.id }
+      where: { id: resolvedParams.id }
     });
 
     return NextResponse.json({

@@ -25,6 +25,8 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -59,6 +61,7 @@ export default function NewContentPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [isPublished, setIsPublished] = useState(true); // Default to published
   const [uploadedFile, setUploadedFile] = useState<{
     url?: string;
     muxAssetId?: string;
@@ -106,52 +109,229 @@ export default function NewContentPage() {
   }, []);
 
   async function handleFileUpload(file: File) {
+    console.log('🚀 VIDEO UPLOAD DEBUG - START');
+    console.log('📁 File Details:', {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      lastModified: file.lastModified,
+      sizeMB: (file.size / (1024 * 1024)).toFixed(2) + 'MB'
+    });
+
     setUploading(true);
+
     try {
+      // 🔍 STEP 1: File Validation
+      console.log('🔍 STEP 1: File Validation');
+      if (file.size === 0) {
+        console.error('❌ File is empty!');
+        throw new Error('File is empty');
+      }
+
+      if (file.size > 100 * 1024 * 1024) {
+        console.error('❌ File too large:', file.size, 'bytes (max: 100MB)');
+        throw new Error(`File too large: ${(file.size / (1024 * 1024)).toFixed(2)}MB (max: 100MB)`);
+      }
+
+      const allowedTypes = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska'];
+      if (!allowedTypes.includes(file.type)) {
+        console.error('❌ Invalid file type:', file.type, '- Allowed:', allowedTypes);
+        throw new Error(`Unsupported file type: ${file.type}. Allowed: MP4, WebM, MOV, MKV`);
+      }
+
+      console.log('✅ File validation passed');
+
+      // 📦 STEP 2: Prepare FormData
+      console.log('📦 STEP 2: Prepare FormData');
       const formData = new FormData();
       formData.append('file', file);
+      console.log('📦 FormData prepared, file appended');
 
-      // Upload video to Stream, other files to R2
+      // 🌐 STEP 3: Determine endpoint
       const endpoint = contentType === 'video' ? '/api/upload/stream' : '/api/upload/r2';
-      
+      console.log('🌐 STEP 3: Upload endpoint:', endpoint);
+      console.log('   Content type:', contentType);
+
+      // 🔐 STEP 4: Check authentication
+      console.log('🔐 STEP 4: Checking authentication...');
+      try {
+        const authCheck = await fetch('/api/creator/me');
+        console.log('   Auth check response:', authCheck.status);
+        if (authCheck.status === 401) {
+          console.log('   ⚠️ User not authenticated');
+        } else if (authCheck.status === 200) {
+          console.log('   ✅ User authenticated');
+        }
+      } catch (authError) {
+        console.error('   ❌ Auth check failed:', authError);
+      }
+
+      // 📤 STEP 5: Start upload
+      console.log('📤 STEP 5: Starting upload...');
+      const uploadStart = Date.now();
+
       const response = await fetch(endpoint, {
         method: 'POST',
         body: formData,
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to upload file');
+      const uploadTime = Date.now() - uploadStart;
+      console.log('⏱️ Upload response time:', uploadTime + 'ms');
+      console.log('📊 Response status:', response.status, response.statusText);
+      console.log('📊 Response headers:', Object.fromEntries(response.headers.entries()));
+
+      // 📄 STEP 6: Process response
+      console.log('📄 STEP 6: Processing response...');
+      const responseText = await response.text();
+      console.log('📄 Raw response:', responseText.substring(0, 500));
+
+      let responseData;
+      try {
+        responseData = JSON.parse(responseText);
+        console.log('📋 Parsed response:', responseData);
+      } catch (parseError) {
+        console.error('❌ Failed to parse response as JSON:', parseError);
+        throw new Error(`Server returned invalid response: ${responseText.substring(0, 200)}`);
       }
 
-      const data = await response.json();
-      
+      if (!response.ok) {
+        console.error('❌ Upload failed with status:', response.status);
+        console.error('❌ Error details:', responseData);
+
+        // Provide specific error messages
+        if (responseData.error?.includes('Authentication')) {
+          throw new Error('Authentication failed. Please log in again.');
+        } else if (responseData.error?.includes('File too large')) {
+          throw new Error('File is too large. Maximum size is 100MB.');
+        } else if (responseData.error?.includes('Unsupported file type')) {
+          throw new Error('Unsupported file type. Please use MP4, WebM, MOV, or MKV.');
+        } else if (responseData.error?.includes('Mux')) {
+          throw new Error('Video processing service error. Please try again.');
+        } else {
+          throw new Error(responseData.error || responseData.details || 'Upload failed');
+        }
+      }
+
+      console.log('✅ Upload successful!');
+      console.log('🎬 Processing response data...');
+
+      // 🎯 STEP 7: Handle success response
+      console.log('🎉 Upload response received:', JSON.stringify(responseData, null, 2));
+
       if (contentType === 'video') {
+        console.log('🎬 Video upload - processing async response...');
+        const videoData = responseData.data;
+
+        // Video is processing asynchronously
         setUploadedFile({
-          muxAssetId: data.muxAssetId,
-          muxPlaybackId: data.muxPlaybackId,
-          uploadUrl: data.uploadUrl,
+          muxUploadId: videoData.muxUploadId,
+          status: videoData.status,
+          statusEndpoint: videoData.statusEndpoint,
+          uploadUrl: videoData.playbackUrl, // Will be null until processing complete
+          estimatedReadyTime: videoData.estimatedReadyTime,
+        });
+
+        // Start polling for video processing status
+        console.log('⏳ Starting video processing status polling...');
+        pollVideoStatus(videoData.muxUploadId);
+
+        toast({
+          title: 'Video Uploaded!',
+          description: videoData.message || 'Your video is being processed. This usually takes 1-3 minutes.',
         });
       } else {
+        console.log('📁 Other file upload - extracting file data...');
         setUploadedFile({
-          url: data.url,
-          fileName: data.fileName,
+          url: responseData.data?.url || responseData.url,
+          fileName: responseData.data?.path || responseData.fileName,
+        });
+
+        toast({
+          title: 'Success',
+          description: 'File uploaded successfully!',
         });
       }
 
-      toast({
-        title: 'Success',
-        description: 'File uploaded successfully!',
-      });
+      console.log('🎉 Upload process initiated successfully!');
+
     } catch (error) {
+      console.error('💥 UPLOAD ERROR:', error);
+      console.error('Error stack:', error.stack);
+      console.error('Error message:', error.message);
+
       toast({
         title: 'Upload failed',
         description: error instanceof Error ? error.message : 'Failed to upload file',
         variant: 'destructive',
       });
     } finally {
+      console.log('🏁 UPLOAD DEBUG - END');
       setUploading(false);
     }
+  }
+
+  // Poll for video processing status
+  async function pollVideoStatus(muxUploadId: string) {
+    console.log('🔄 Starting video status polling for:', muxUploadId);
+
+    const maxAttempts = 60; // 60 attempts = ~2 minutes
+    const pollInterval = 2000; // 2 seconds
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(`🔄 Polling attempt ${attempt}/${maxAttempts}...`);
+
+        const statusResponse = await fetch(`/api/upload/status/${muxUploadId}`);
+        const statusData = await statusResponse.json();
+
+        console.log('📊 Video status:', statusData);
+
+        if (statusData.ready && statusData.playbackUrl) {
+          console.log('✅ Video processing complete!');
+          console.log('🎬 Playback URL:', statusData.playbackUrl);
+
+          // Update the uploaded file with the real data
+          setUploadedFile(prev => ({
+            ...prev,
+            muxAssetId: statusData.assetId,
+            muxPlaybackId: statusData.playbackId,
+            uploadUrl: statusData.playbackUrl,
+            status: 'ready',
+          }));
+
+          toast({
+            title: 'Video Ready!',
+            description: 'Your video has finished processing and is now ready to view.',
+          });
+
+          return; // Stop polling
+        }
+
+        if (statusData.error) {
+          console.error('❌ Video processing error:', statusData.error);
+          toast({
+            title: 'Processing Error',
+            description: `Video processing failed: ${statusData.error}`,
+            variant: 'destructive',
+          });
+          return; // Stop polling
+        }
+
+        // Video still processing - wait before next poll
+        console.log(`⏳ Video still processing (status: ${statusData.assetStatus || 'unknown'})...`);
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+      } catch (error) {
+        console.error('❌ Polling error:', error);
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+      }
+    }
+
+    console.log('⏰ Polling timeout - video may still be processing');
+    toast({
+      title: 'Still Processing',
+      description: 'Your video is taking longer than expected to process. Please check back later.',
+    });
   }
 
   async function onSubmit(data: ContentFormValues) {
@@ -173,6 +353,7 @@ export default function NewContentPage() {
 
       const result = await createContent({
         ...data,
+        isPublished: isPublished,
         tags: [],
         requiredPlanId: undefined,
         muxAssetId: uploadedFile?.muxAssetId,
@@ -453,33 +634,90 @@ export default function NewContentPage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="border rounded-lg p-4 flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">
-                              {uploadedFile.fileName || 'File uploaded'}
-                            </p>
-                            {uploadedFile.muxPlaybackId && (
-                              <p className="text-xs text-muted-foreground">
-                                Playback ID: {uploadedFile.muxPlaybackId}
+                      <div className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-4">
+                            <div className="flex-1">
+                              <p className="text-sm font-medium">
+                                {uploadedFile.fileName || 'Video uploaded'}
                               </p>
-                            )}
+                              {uploadedFile.muxUploadId && (
+                                <p className="text-xs text-muted-foreground">
+                                  Upload ID: {uploadedFile.muxUploadId}
+                                </p>
+                              )}
+                              {uploadedFile.status && (
+                                <p className="text-xs text-muted-foreground">
+                                  Status: {uploadedFile.status === 'processing' ? 'Processing video...' :
+                                           uploadedFile.status === 'ready' ? 'Ready to stream!' :
+                                           uploadedFile.status}
+                                </p>
+                              )}
+                              {uploadedFile.estimatedReadyTime && uploadedFile.status === 'processing' && (
+                                <p className="text-xs text-muted-foreground">
+                                  Estimated ready: {new Date(uploadedFile.estimatedReadyTime).toLocaleTimeString()}
+                                </p>
+                              )}
+                            </div>
                           </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setUploadedFile(null)}
+                            disabled={uploading}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
                         </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setUploadedFile(null)}
-                          disabled={uploading}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+
+                        {/* Processing Progress Bar */}
+                        {uploadedFile.status === 'processing' && (
+                          <div className="mt-3">
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{width: '60%'}}></div>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Processing your video... This usually takes 1-3 minutes.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Ready Status */}
+                        {uploadedFile.status === 'ready' && uploadedFile.uploadUrl && (
+                          <div className="mt-3 p-2 bg-green-50 border border-green-200 rounded">
+                            <p className="text-xs text-green-700">
+                              ✅ Video ready! Playback URL: {uploadedFile.uploadUrl}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
                 </FormItem>
               )}
+
+              {/* Publish/Draft Toggle */}
+              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border">
+                <div className="space-y-1">
+                  <Label htmlFor="publish-toggle" className="text-sm font-medium">
+                    Publish Status
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Choose whether to publish immediately or save as draft
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Label htmlFor="publish-toggle" className="text-sm">
+                    {isPublished ? 'Published' : 'Draft'}
+                  </Label>
+                  <Switch
+                    id="publish-toggle"
+                    checked={isPublished}
+                    onCheckedChange={setIsPublished}
+                  />
+                </div>
+              </div>
 
               <div className="flex gap-4">
                 <Button
@@ -491,7 +729,12 @@ export default function NewContentPage() {
                   Cancel
                 </Button>
                 <Button type="submit" disabled={isLoading}>
-                  {isLoading ? 'Creating...' : 'Create Content'}
+                  {isLoading
+                    ? 'Creating...'
+                    : isPublished
+                      ? 'Publish Content'
+                      : 'Save as Draft'
+                  }
                 </Button>
               </div>
             </form>

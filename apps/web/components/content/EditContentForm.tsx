@@ -121,8 +121,9 @@ export function EditContentForm({ content, creatorPlans, collections }: EditCont
       const result = await response.json();
 
       if (response.ok) {
-        router.push('/dashboard/content');
-        router.refresh();
+        console.log('✅ Content update successful, redirecting to /content');
+        // Use window.location for a hard redirect to ensure it works
+        window.location.href = '/content';
       } else {
         setErrors({ submit: result.error || 'Failed to update content' });
       }
@@ -147,8 +148,8 @@ export function EditContentForm({ content, creatorPlans, collections }: EditCont
       });
 
       if (response.ok) {
-        router.push('/dashboard/content');
-        router.refresh();
+        // Use window.location for a hard redirect to ensure it works
+        window.location.href = '/content';
       } else {
         const result = await response.json();
         setErrors({ submit: result.error || 'Failed to delete content' });

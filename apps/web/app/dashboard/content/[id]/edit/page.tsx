@@ -3,12 +3,14 @@ import { createClient } from '@/lib/supabase/server';
 import { prisma } from '@odim/database';
 import { redirect } from 'next/navigation';
 import { EditContentForm } from '@/components/content/EditContentForm';
+import { serializeForClient } from '@/lib/utils';
 
 interface EditContentPageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 export default async function EditContentPage({ params }: EditContentPageProps) {
+  const resolvedParams = await params;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -18,7 +20,7 @@ export default async function EditContentPage({ params }: EditContentPageProps) 
 
   // Check if content exists and belongs to user
   const content = await prisma.content.findUnique({
-    where: { id: params.id },
+    where: { id: resolvedParams.id },
     include: {
       creator: {
         select: { userId: true, username: true }
@@ -69,9 +71,9 @@ export default async function EditContentPage({ params }: EditContentPageProps) 
 
       <Suspense fallback={<EditContentLoading />}>
         <EditContentForm
-          content={content}
-          creatorPlans={creatorPlans}
-          collections={collections}
+          content={serializeForClient(content)}
+          creatorPlans={serializeForClient(creatorPlans)}
+          collections={serializeForClient(collections)}
         />
       </Suspense>
     </div>

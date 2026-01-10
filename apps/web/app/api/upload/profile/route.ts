@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@/lib/supabase/server';
 import { prisma } from '@odim/database';
 import { UploadService } from '@/lib/storage/upload-service';
+import { randomUUID } from 'crypto'; // ✅ FIXED: Add missing import
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 minutes for large files
@@ -10,15 +11,6 @@ export async function POST(request: NextRequest) {
   console.log('🎯 Profile upload API called');
 
   try {
-    // Check environment variables first
-    console.log('Checking R2 config...');
-    console.log('R2_ACCOUNT_ID:', R2_ACCOUNT_ID ? 'SET' : 'MISSING');
-    console.log('R2_ACCESS_KEY_ID:', R2_ACCESS_KEY_ID ? 'SET' : 'MISSING');
-    console.log('R2_SECRET_ACCESS_KEY:', R2_SECRET_ACCESS_KEY ? 'SET' : 'MISSING');
-    console.log('R2_BUCKET_NAME:', R2_BUCKET_NAME ? 'SET' : 'MISSING');
-    console.log('R2_PUBLIC_URL:', R2_PUBLIC_URL ? 'SET' : 'MISSING');
-
-
     // Authenticate user
     console.log('Authenticating user...');
     const supabase = await createRouteHandlerClient();
@@ -59,8 +51,7 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const file = formData.get('file') as File;
-    const fileName = formData.get('fileName') as string;
-    const type = formData.get('type') as string; // 'avatar' or 'banner'
+    const type = formData.get('type') as 'avatar' | 'banner'; // ✅ FIXED: Remove unused fileName, fix type
 
     console.log('Request received:', { fileName: file?.name, size: file?.size, type: file?.type, uploadType: type });
 
@@ -111,7 +102,7 @@ export async function POST(request: NextRequest) {
         creatorId: creator.id,
         uploadType: type,
       },
-      optimizeImages: false, // TODO: Enable when Sharp is installed
+      optimizeImages: true, // ✅ FIXED: Enable image optimization
       maxSizeMB: type === 'avatar' ? 5 : 20, // 5MB for avatar, 20MB for banner
     });
 

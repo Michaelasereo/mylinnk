@@ -17,6 +17,10 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+[[functions.schedule]]
+  cron = "0 9 * * 1" # Every Monday at 9 AM
+  function = "process-payouts"
+
 [dev]
   framework = "nextjs"
   port = 3000
